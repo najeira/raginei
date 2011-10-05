@@ -754,6 +754,16 @@ class ModelMixin(object):
   
   def put_flag(self, value):
     """このエンティティに関連した一意な名前を保存します。
+    
+    このメソッドはトランザクションを使用せず、呼び出し元のトランザクションに参加します。
+    このため、あるトランザクションが1度限り実行されることを保証したい場合などに使用します。
+    
+    >>> def txn():
+    ...   entity = db.get(key)
+    ...   entity.some_value = new_value
+    ...   entity.put_flag(this_tx_name) #raises Error on second execution.
+    ...   entity.put()
+    >>> db.run_in_transaction(txn)
     """
     assert is_in_transaction()
     
@@ -1913,6 +1923,8 @@ class EnvironProperty(Property):
 
 
 class RevisionProperty(IntegerProperty):
+  """"""
+  
   def __init__(self, default=0, **kwds):
     super(RevisionProperty, self).__init__(default=default, **kwds)
   
@@ -2014,7 +2026,7 @@ def delete_unique(cls, value):
   RagineiUniqueKey.delete_unique(value)
 
 
-def delete_unique_by_owner(cls, owner):
+def delete_uniques_by_owner(cls, owner):
   return RagineiUniqueKey.delete_uniques_by_owner(owner)
 
 
