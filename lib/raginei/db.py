@@ -752,48 +752,12 @@ class ModelMixin(object):
     
     return entity
   
-  @classmethod
-  def unique_key_name(cls, value):
-    if value.startswith('__'):
-      return u'a' + value
-    return value
-  
-  @classmethod
-  def put_unique(cls, value, owner=None):
-    """一意な値を保存します。
-    
-    処理が成功した場合、その名前が新規作成されたことが保証されます。
-    すでに名前が存在した場合は、UniqueKeyErrorが発生します。
-    
-    このメソッドで一意な名前を保存したあとに処理が中断した場合は、
-    delete_uniqueメソッドで名前を削除する必要があります。
-    
-    Args:
-      value: 保存する値
-      owner: 関連するエンティティもしくはKey
-    
-    Returns:
-      保存された一意な値のエンティティ
-    """
-    value = cls.unique_key_name(value)
-    if owner:
-      owner = owner if isinstance(owner, Key) else owner.key()
-    def txn():
-      entity = RagineiUniqueKey.get_by_key_name(value)
-      if entity:
-        raise UniqueKeyError()
-      entity = RagineiUniqueKey(key_name=value, owner_key=owner)
-      entity.put()
-      return entity
-    return run_in_transaction_retries()(txn)()
-
   def put_flag(self, value):
+    """このエンティティに関連した一意な名前を保存します。
+    """
     assert is_in_transaction()
     
-    if isinstance(value, basestring):
-      value = cls.unique_key_name(value)
-    
-    key = RagineiFlag.to_key(value, parent=self.key())
+    key = Key.from_path(RagineiFlag.kind(), value, parent=self.key())
     
     entity = RagineiFlag.get(key)
     if entity:
@@ -803,21 +767,6 @@ class ModelMixin(object):
     entity.put()
     return entity
   
-  @classmethod
-  @decorator.retry_on_timeout()
-  def delete_unique(cls, value):
-    """一意な値を削除します。
-    
-    Args:
-      value: 削除する値
-    """
-    value = cls.unique_key_name(value)
-    delete(Key.from_path(RagineiUniqueKey.kind(), value))
-
-  @property
-  def uniques(self):
-    return RagineiUniqueKey.all().filter('owner_key =', self.key())
-
   def validate(self):
     """プロパティの値を検証するために継承できます。
     
@@ -915,7 +864,7 @@ class ModelEx(ModelMixin, Model):
   pass
 
 
-def to_unicode(s, charset='utf-8'):
+def to_unicode(s, charset='utf-8', errors='strict'):
   """値がUnicodeにして返します。
   
   値がリストの場合は各要素を再帰的にUnicodeにします。
@@ -925,16 +874,16 @@ def to_unicode(s, charset='utf-8'):
     return s
   elif isinstance(s, dict):
     for k in s.iterkeys():
-      s[k] = to_unicode(s[k])
+      s[k] = to_unicode(s[k], charset, errors)
     return s
   elif isinstance(s, list):
-    return [to_unicode(x, charset) for x in s]
+    return [to_unicode(x, charset, errors) for x in s]
   elif isinstance(s, tuple):
-    return (to_unicode(x, charset) for x in s)
+    return (to_unicode(x, charset, errors) for x in s)
   elif not isinstance(s, basestring):
     return s
   if not isinstance(s, unicode):
-    s = unicode(s, charset)
+    s = unicode(s, charset, errors)
   return s
 
 
@@ -1953,11 +1902,11 @@ class EnvironProperty(Property):
 
   def environ(self):
     rets = {}
-    for k in self.headers or self.HEADERS:
+    for k in (self.headers or self.HEADERS):
       v = os.environ.get(k)
       if v:
         try:
-          rets[k] = unicode(v, 'utf-8')
+          rets[k] = to_unicode(v, errors='replace')
         except UnicodeDecodeError:
           pass
     return rets
@@ -1986,11 +1935,88 @@ def _randstr(length=9, chars=None):
 class RagineiUniqueKey(Model):
   """一意な名前のためのクラス"""
   owner_key = KeyProperty()
-
+  
   @property
   def owner(self):
     return get(self.owner_key)
+  
+  @classmethod
+  def unique_key_name(cls, value):
+    if value.startswith('__'):
+      return u'a' + value
+    return value
+  
+  @classmethod
+  def put_unique(cls, value, owner=None):
+    value = cls.unique_key_name(value)
+    if owner:
+      owner = owner if isinstance(owner, Key) else owner.key()
+    return cls._put_unique_impl(value, owner)
+  
+  @classmethod
+  @run_in_transaction_retries()
+  def _put_unique_impl(cls, value, owner=None):
+    entity = cls.get_by_key_name(value)
+    if entity:
+      raise UniqueKeyError()
+    entity = cls(key_name=value, owner_key=owner)
+    entity.put()
+    return entity
+  
+  @classmethod
+  @decorator.retry_on_timeout()
+  def delete_unique(cls, value):
+    value = cls.unique_key_name(value)
+    delete(Key.from_path(cls.kind(), value))
+  
+  @classmethod
+  @decorator.retry_on_timeout()
+  def delete_uniques_by_owner(cls, owner):
+    if owner:
+      owner = owner if isinstance(owner, Key) else owner.key()
+    config = create_config(read_policy=STRONG_CONSISTENCY)
+    while True:
+      q = cls.all(keys_only=True).filter('owner_key =', owner)
+      keys = q.fetch(500, config=config)
+      if not keys:
+        break
+      delete(keys)
 
 
-class RagineiFlag(ModelEx):
+def put_unique(value):
+  """データストア内で一意な名前を作成して保存します。
+  
+  処理が成功した場合、その名前が新規作成されたことが保証されます。
+  すでに名前が存在した場合は、UniqueKeyErrorが発生します。
+  
+  この関数で一意な名前を保存したあとに処理が中断した場合は、
+  delete_uniqueメソッドで名前を削除する必要があります。
+  
+  この関数はトランザクションを使用します。
+  
+  Args:
+    value: 保存する名前
+    owner: 関連するエンティティもしくはKey。
+      この引数はエンティティグループは形成しません。
+  
+  Returns:
+    保存されたRagineiUniqueKeyのエンティティ
+  """
+  return RagineiUniqueKey.put_unique()
+
+
+def delete_unique(cls, value):
+  """データストア内に保存された一意な名前を削除します。
+  
+  Args:
+    value: 削除する値
+  """
+  RagineiUniqueKey.delete_unique(value)
+
+
+def delete_unique_by_owner(cls, owner):
+  return RagineiUniqueKey.delete_uniques_by_owner(owner)
+
+
+class RagineiFlag(Model):
   """"""
