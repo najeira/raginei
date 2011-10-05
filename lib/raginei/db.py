@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 raginei.db
-===========
+==========
 
 :copyright: (c) 2011 by najeira <najeira@gmail.com>, All rights reserved.
 :license: Apache License 2.0, see LICENSE for more details.
@@ -647,22 +647,20 @@ class ModelMixin(object):
 
   @classmethod
   def _insert(cls, key=None, key_name=None, id=None, parent=None,
-    revision=None, _method=None, **kwds):
+    _method=None, **kwds):
     """エンティティを保存します。
     
     key、 key_name、idが指定された場合の動作は_methodによって異なります。
     
-    モデルがrevisionプロパティを持ち、引数にrevisionが指定された場合、
-    データストアから取得したエンティティとrevisionを比較し、
-    値が異なる場合はCollisionErrorが発生します。
-    これにより、複数のリクエストにまたがった処理での排他制御が可能です。
+    モデルがRevisionPropertyを持ち、引数にそのプロパティの値が指定された場合、
+    データストアから取得したエンティティと比較し、値が異なる場合はCollisionErrorが発生します。
+    これにより、複数のHTTPリクエストにまたがった処理での楽観的排他制御が可能です。
     
     Args:
       key: Key
       key_name: key_name
       id: id
       parent: 
-      revision: 
       _method: 
       **kwds: プロパティに設定する値
     
@@ -673,7 +671,7 @@ class ModelMixin(object):
     #トランザクション内の場合はそのまま実行
     if is_in_transaction():
       return cls._insert_impl(key=key, key_name=key_name, id=id, parent=parent,
-        revision=revision, method=_method, **kwds)
+        method=_method, **kwds)
     
     #Keyがない場合は確保しておく
     #リトライ時に複数のエンティティが保存されることを防ぐため
@@ -683,19 +681,19 @@ class ModelMixin(object):
     
     #トランザクション内で実行
     return cls._insert_impl_tx(key=key, key_name=key_name, id=id, parent=parent,
-      revision=revision, method=_method, **kwds)
+      method=_method, **kwds)
   
   @classmethod
   @run_in_transaction_retries()
   def _insert_impl_tx(cls, key=None, key_name=None, id=None, parent=None,
-    revision=None, method=None, **kwds):
+    method=None, **kwds):
     assert key or key_name or id
     return cls._insert_impl(key=key, key_name=key_name, id=id, parent=parent,
-      revision=revision, method=method, **kwds)
+      method=method, **kwds)
   
   @classmethod
   def _insert_impl(cls, key=None, key_name=None, id=None, parent=None,
-    revision=None, method=None, **kwds):
+    method=None, **kwds):
     entity = None
     
     if key:
@@ -729,21 +727,26 @@ class ModelMixin(object):
       elif 'insert' == method:
         raise Error() #already exists
     
+    rev_prop = getattr(cls, '_revision_property', None)
+    
     if entity is None:
       entity = cls(**kwds)
       
-    elif revision is not None:
+    else:
       #エンティティがある場合で引数にリビジョンが
       #指定されている場合はリビジョンによる排他のチェック
-      if revision != entity.revision:
-        raise CollisionError()
+      if rev_prop:
+        kwds_rev = kwds.get(rev_prop.name)
+        if kwds_rev is not None:
+          if kwds_rev != rev_prop.__get__(entity):
+            raise CollisionError()
     
     #db.Property以外を更新するためのapply
     entity.apply(**kwds)
     
     #あればリビジョン番号をあげておく
-    if hasattr(entity, 'revision'):
-      entity.revision += 1
+    if rev_prop:
+      rev_prop.__set__(entity, rev_prop.__get__(entity) + 1)
     
     entity.put()
     
@@ -811,6 +814,7 @@ class ModelMixin(object):
     value = cls.unique_key_name(value)
     delete(Key.from_path(RagineiUniqueKey.kind(), value))
 
+  @property
   def uniques(self):
     return RagineiUniqueKey.all().filter('owner_key =', self.key())
 
@@ -920,11 +924,13 @@ def to_unicode(s, charset='utf-8'):
   if s is None:
     return s
   elif isinstance(s, dict):
-    for k, v in s.items():
-      s[k] = to_unicode(v)
+    for k in s.iterkeys():
+      s[k] = to_unicode(s[k])
     return s
-  elif isinstance(s, (list, tuple)):
+  elif isinstance(s, list):
     return [to_unicode(x, charset) for x in s]
+  elif isinstance(s, tuple):
+    return (to_unicode(x, charset) for x in s)
   elif not isinstance(s, basestring):
     return s
   if not isinstance(s, unicode):
@@ -1548,10 +1554,9 @@ class DictProperty(Property):
 
   data_type = Blob
 
-  def __init__(self, extras=None, compress=True, **kwargs):
+  def __init__(self, compress=True, **kwargs):
     super(DictProperty, self).__init__(**kwargs)
     self.compress = compress
-    self.extras = extras
 
   def get_value_for_datastore(self, model_instance):
     value = super(DictProperty, self).get_value_for_datastore(model_instance)
@@ -1581,17 +1586,6 @@ class DictProperty(Property):
 
   def default_value(self):
     return copy.copy(self.default) if self.default else {}
-
-  def __property_config__(self, model_class, property_name):
-    super(DictProperty, self).__property_config__(model_class, property_name)
-    if not self.extras:
-      return
-    for extra in self.extras:
-      prop = getattr(model_class, extra, None)
-      if prop:
-        raise DuplicatePropertyError('Class %s already has property %s '
-          % (model_class.__name__, extra))
-      setattr(model_class, extra, property_of_dict(property_name, extra))
 
 
 class PickleProperty(Property):
@@ -1969,21 +1963,24 @@ class EnvironProperty(Property):
     return rets
 
 
-_SALT_CHARS = string.ascii_lowercase + string.digits
+class RevisionProperty(IntegerProperty):
+  def __init__(self, default=0, **kwds):
+    super(RevisionProperty, self).__init__(default=default, **kwds)
+  
+  def __property_config__(self, model_class, property_name):
+    super(RevisionProperty, self).__property_config__(model_class, property_name)
+    if hasattr(model_class, '_revision_property'):
+      raise DuplicatePropertyError('Duplicate RevisionProperty: %s and %s' % (
+        model_class._revision_property.name, property_name))
+    model_class._revision_property = self
 
+
+_SALT_CHARS = string.ascii_lowercase + string.digits
 
 def _randstr(length=9, chars=None):
   if length <= 0:
     raise ValueError()
   return ''.join(random.choice(chars or _SALT_CHARS) for _ in xrange(length))
-
-
-def property_of_dict(prop_name, name):
-  def _get(self):
-    return getattr(self, prop_name).get(name)
-  def _set(self, value):
-    getattr(self, prop_name)[name] = value
-  return property(_get, _set)
 
 
 class RagineiUniqueKey(Model):
@@ -1997,5 +1994,3 @@ class RagineiUniqueKey(Model):
 
 class RagineiFlag(ModelEx):
   """"""
-
-
