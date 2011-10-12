@@ -29,6 +29,11 @@ session = LocalProxy(lambda: current_app.session)
 request = LocalProxy(lambda: current_app.request)
 config = LocalProxy(lambda: current_app.config)
 
+_routes = []
+_context_processors = []
+_template_filters = {}
+_template_funcs = {}
+
 
 class Application(object):
   
@@ -50,6 +55,8 @@ class Application(object):
     self.error_handlers = {}
     self.jinja2_extensions = self.config.get('jinja2_extensions') or []
     self.jinja2_environment_kwargs = self.config.get('jinja2_environment_kwargs') or {}
+    self.load_modules(self.config.get('load_modules'))
+    self.init_functions(self.config.get('init_functions'))
   
   def load_config(self, config, **kwds):
     if not config:
@@ -61,6 +68,35 @@ class Application(object):
     if kwds:
       config.update(kwds)
     return config
+  
+  def load_modules(self, modules):
+    if modules:
+      for name in modules:
+        import_string(name)
+  
+  def init_functions(self, funcs):
+    if funcs:
+      for name in funcs:
+        func = import_string(name)
+        func(self)
+    
+    #defaults
+    self.init_routes()
+    self.init_templates()
+  
+  def init_routes(self):
+    for args, kwds, f in _routes:
+      self.route(*args, **kwds)(f)
+  
+  def init_templates(self):
+    for f in _context_processors:
+      self.context_processor(f)
+    
+    for name, f in _template_filters.iteritems():
+      self.template_filter(name)(f)
+    
+    for name, f in _template_funcs.iteritems():
+      self.template_func(name)(f)
   
   def add_url_rule(self, rule, endpoint, view_func=None, **options):
     options['endpoint'] = endpoint
@@ -366,6 +402,12 @@ def render_json(value, content_type='application/json'):
 def render_text(value, content_type='text/plain'):
   return current_app.make_response(value, content_type=content_type)
 
+_BLANK_IMAGE = 'GIF89a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00\xff\xff\xff!\xf9'\
+  '\x04\x01\x00\x00\x01\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02L\x01\x00;'
+
+def render_blank_image():
+  return current_app.make_response(_BLANK_IMAGE, content_type='image/gif')
+
 def fetch_json(value, sort_keys=True, **kwds):
   try:
     import simplejson
@@ -440,3 +482,29 @@ def url(endpoint, **values):
       endpoint = endpoint[1:]
     ret = current_app.url_adapter.build(endpoint, values, force_external=external)
   return ret
+
+
+def route(*args, **kwds):
+  def decorator(f):
+    _routes.append( (args, kwds, f) )
+    return f
+  return decorator
+
+
+def context_processor(f):
+  _context_processors.append(f)
+  return f
+
+
+def template_filter(name=None):
+  def decorator(f):
+    _template_filters[name or f.__name__] = f
+    return f
+  return decorator
+
+
+def template_func(name=None):
+  def decorator(f):
+    _template_funcs[name or f.__name__] = f
+    return f
+  return decorator

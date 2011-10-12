@@ -15,7 +15,9 @@ def gen_token():
     session['_csrf'] = base64.b32encode(uuid.uuid4().bytes)[:8].lower()
   return session['_csrf']
 
-def register(server, on_csrf=None):
+def register(server):
+  
+  csrf_callback = server.config.get('csrf_callback')
   
   @server.request_middleware
   def protect(request):
@@ -23,6 +25,6 @@ def register(server, on_csrf=None):
       csrf_token = session.get('_csrf')
       if not csrf_token or csrf_token != request.form.get('_csrf'):
         if server.view_functions.get(request.endpoint) not in _exempts:
-          if on_csrf:
-            on_csrf(request)
+          if csrf_callback:
+            csrf_callback(request)
           abort('CSRF detected.', 400)
