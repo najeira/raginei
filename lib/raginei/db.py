@@ -211,7 +211,9 @@ def get(keys, **kwargs):
     config = kwargs.get('config')
     if config:
       if config.read_policy is None:
-        config.read_policy = EVENTUAL_CONSISTENCY
+        new_config = create_config(read_policy=EVENTUAL_CONSISTENCY)
+        new_config.merge(config)
+        config = new_config
     else:
       kwargs['config'] = create_config(read_policy=EVENTUAL_CONSISTENCY)
   return _orig_get(keys, **kwargs)
@@ -1944,6 +1946,14 @@ def _randstr(length=9, chars=None):
   return ''.join(random.choice(chars or _SALT_CHARS) for _ in xrange(length))
 
 
+def property_of_dict(prop_name, name):
+  def _get(self):
+    return getattr(self, prop_name).get(name)
+  def _set(self, value):
+    getattr(self, prop_name)[name] = value
+  return property(_get, _set)
+
+
 class RagineiUniqueKey(Model):
   """一意な名前のためのクラス"""
   owner_key = KeyProperty()
@@ -2014,10 +2024,10 @@ def put_unique(value):
   Returns:
     保存されたRagineiUniqueKeyのエンティティ
   """
-  return RagineiUniqueKey.put_unique()
+  return RagineiUniqueKey.put_unique(value)
 
 
-def delete_unique(cls, value):
+def delete_unique(value):
   """データストア内に保存された一意な名前を削除します。
   
   Args:
@@ -2026,7 +2036,7 @@ def delete_unique(cls, value):
   RagineiUniqueKey.delete_unique(value)
 
 
-def delete_uniques_by_owner(cls, owner):
+def delete_uniques_by_owner(owner):
   return RagineiUniqueKey.delete_uniques_by_owner(owner)
 
 
