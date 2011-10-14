@@ -24,5 +24,16 @@ def funcname(f):
         f.__module__, f.im_self.__name__, f.__name__)
     return '%s.%s.%s' % (
       f.__module__, f.im_self.__class__.__name__, f.__name__)
-  except Exception:
+  except AttributeError:
     return '%s.%s' % (f.__module__, getattr(f, '__name__', str(f)))
+
+
+def json_module():
+  try:
+    try:
+      import json as simplejson
+    except ImportError:
+      import simplejson
+  except ImportError:
+    from django.utils import simplejson
+  return simplejson

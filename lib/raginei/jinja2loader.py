@@ -9,6 +9,10 @@ _strip_extentions = ('.html', '.htm', '.xml', '.xhtml')
 
 class LoaderMixin(object):
   
+  def __init__(self, *args, **kwds):
+    super(LoaderMixin, self).__init__(*args, **kwds)
+    self._code_cache = {}
+  
   @internalcode
   def load(self, environment, name, globals=None):
     if name in self._code_cache:
@@ -16,23 +20,30 @@ class LoaderMixin(object):
     else:
       source, filename, uptodate = self.get_source(environment, name)
       if filename.endswith(_strip_extentions):
-        source = _strip_template(source)
-      code = environment.compile(source, name, filename)
+        source = TemplateStrip.strip(source)
+      code = self.compile(environment, source, name, filename)
       self._code_cache[name] = (code, uptodate)
     return environment.template_class.from_code(
       environment, code, globals or {}, uptodate)
+  
+  def compile(self, environment, source, name, filename):
+    return environment.compile(source, name, filename)
 
 
 class FileSystemLoader(LoaderMixin, FileSystemLoaderBase):
+  pass
+
+
+class FileSystemCodeLoader(FileSystemLoader):
   
-  def __init__(self, searchpath, encoding='utf-8'):
-    super(FileSystemLoader, self).__init__(searchpath, encoding)
-    self._code_cache = {}
+  def compile(self, environment, source, name, filename):
+    return compile(source, filename, 'exec')
 
 
 class DatastoreLoader(LoaderMixin, BaseLoader):
   
   def __init__(self, model_class, encoding='utf-8'):
+    super(DatastoreLoader, self).__init__(self)
     self.model_class = model_class
     self.encoding = encoding
     self._code_cache = {}
@@ -44,37 +55,26 @@ class DatastoreLoader(LoaderMixin, BaseLoader):
     return obj.source, template, obj.uptodate
 
 
-_content_repl_script_re = re.compile('(</script.*?>|^)(.*?)(<script.*?>|$)',
-  re.IGNORECASE | re.DOTALL)
-_content_repl_textarea_re = re.compile('(</textarea.*?>|^)(.*?)(<textarea.*?>|$)',
-  re.IGNORECASE | re.DOTALL)
-_content_repl_tag_re = re.compile('(>|^)(.*?)(<|$)', re.DOTALL)
-_content_repl_space_re = re.compile(r'[\t\s]*[\r\n]+[\t\s]*', re.MULTILINE)
+class DatastoreCodeLoader(DatastoreLoader):
+  
+  def compile(self, environment, source, name, filename):
+    return compile(source, filename, 'exec')
 
 
-def _strip_template(source):
-  return _content_repl_script_re.sub(_content_repl_func1, source)
-
-
-def _content_repl_func1(matchobj):
-  start = matchobj.group(1)
-  target = matchobj.group(2)
-  end = matchobj.group(3)
-  target = _content_repl_textarea_re.sub(_content_repl_func2, target)
-  return start + target + end
-
-
-def _content_repl_func2(matchobj):
-  start = matchobj.group(1)
-  target = matchobj.group(2)
-  end = matchobj.group(3)
-  target = _content_repl_tag_re.sub(_content_repl_func3, target)
-  return start + target + end
-
-
-def _content_repl_func3(matchobj):
-  start = matchobj.group(1)
-  target = matchobj.group(2)
-  end = matchobj.group(3)
-  target = _content_repl_space_re.sub('', target)
-  return start + target + end
+class TemplateStrip(object):
+  
+  E_BRACKET_OPEN = re.escape('{')
+  E_BRACKET_CLOSE = re.escape('}')
+  E_LT = re.escape('<')
+  E_GT = re.escape('>')
+  E_PERCENT = re.escape('%')
+  E_HASH = re.escape('#')
+  
+  SPACE_RE = re.compile(r'(%s|(?:%s|%s|%s)%s)[\s\r\n]+((?:%s|%s(?:%s|%s|%s)))' % (
+    E_GT, E_PERCENT, E_HASH, E_BRACKET_CLOSE, E_BRACKET_CLOSE,
+    E_LT, E_BRACKET_OPEN, E_BRACKET_OPEN, E_PERCENT, E_HASH,
+  ), re.MULTILINE)
+  
+  @classmethod
+  def strip(cls, source):
+    return cls.SPACE_RE.sub('\\1\\2', source)

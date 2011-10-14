@@ -10,6 +10,8 @@ raginei.app
 import sys
 import os
 import logging
+import functools
+import time
 
 from jinja2 import Environment
 
@@ -35,6 +37,29 @@ _template_filters = {}
 _template_funcs = {}
 
 
+def is_debug():
+  return 'localhost' == os.environ.get('SERVER_NAME', '') or \
+    os.environ.get('SERVER_SOFTWARE', '').startswith('Dev')
+
+
+def measure_time(f):
+  
+  if not is_debug():
+    return f
+  
+  callee_name = funcname(f)
+  
+  @functools.wraps(f)
+  def wrapper(*args, **kwds):
+    start = time.clock()
+    try:
+      return f(*args, **kwds)
+    finally:
+      if current_app.config.get('logging_internal'):
+        logging.info('%s: %.6f' % (callee_name, time.clock() - start))
+  return wrapper
+
+
 class Application(object):
   
   def __init__(self, config=None, **kwds):
@@ -55,8 +80,11 @@ class Application(object):
     self.error_handlers = {}
     self.jinja2_extensions = self.config.get('jinja2_extensions') or []
     self.jinja2_environment_kwargs = self.config.get('jinja2_environment_kwargs') or {}
+    self.logging_internal = self.config.get('logging_internal') or False
+    self.register_extensions(self.config.get('register_extensions'))
     self.load_modules(self.config.get('load_modules'))
-    self.init_functions(self.config.get('init_functions'))
+    self.init_routes()
+    self.init_templates()
   
   def load_config(self, config, **kwds):
     if not config:
@@ -74,15 +102,27 @@ class Application(object):
       for name in modules:
         import_string(name)
   
-  def init_functions(self, funcs):
+  def register_extension(self, name):
+    if name:
+      func = import_string(name)
+      func(self)
+  
+  def register_extension_session(self):
+    self.register_extension(self.config.get(
+      'extension_session', 'raginei.ext.session.register'))
+  
+  def register_extension_csrf(self):
+    self.register_extension(self.config.get(
+      'extension_csrf', 'raginei.ext.csrf.register'))
+  
+  def register_extensions(self, funcs):
+    self.register_extension_session()
+    self.register_extension_csrf()
+    
     if funcs:
       for name in funcs:
         func = import_string(name)
         func(self)
-    
-    #defaults
-    self.init_routes()
-    self.init_templates()
   
   def init_routes(self):
     for args, kwds, f in _routes:
@@ -109,6 +149,7 @@ class Application(object):
       return args[0]
     return self.response_class(*args, **kwds)
   
+  @measure_time
   def process_request(self):
     if self.request_middlewares:
       for mw in self.request_middlewares:
@@ -116,18 +157,21 @@ class Application(object):
         if response:
           return response
   
+  @measure_time
   def process_response(self, response):
     if self.response_middlewares:
       for mw in self.response_middlewares:
         response = mw(response) or response
     return response
   
+  @measure_time
   def process_routing(self, endpoint):
     if self.routing_middlewares:
       for mw in self.routing_middlewares:
         endpoint = mw(self.request, endpoint) or endpoint
     return endpoint
   
+  @measure_time
   def process_view(self, view_func):
     if self.view_middlewares:
       for mw in self.view_middlewares:
@@ -135,6 +179,7 @@ class Application(object):
         if response:
           return response
   
+  @measure_time
   def process_exception(self, e):
     if self.exception_middlewares:
       for mw in self.exception_middlewares:
@@ -177,6 +222,7 @@ class Application(object):
     except Exception, e:
       return self.handle_exception(e)
   
+  @measure_time
   def process_view_func(self, view_func, context):
     value = view_func(**context)
     if isinstance(value, (tuple, list)):
@@ -224,6 +270,7 @@ class Application(object):
     self.override_headers(response)
     self.override_cookies(response)
   
+  @measure_time
   def override_headers(self, response):
     if hasattr(response, 'headers'):
       oh = getattr(local, 'override_headers', None)
@@ -231,6 +278,7 @@ class Application(object):
         response.headers.extend(oh)
         del local.override_headers
   
+  @measure_time
   def override_cookies(self, response):
     if hasattr(response, 'set_cookie'):
       oc = getattr(local, 'override_cookies', None)
@@ -289,14 +337,12 @@ class Application(object):
       yield ext
   
   def init_jinja2_environ(self):
+    loader_name = self.config.get('jinja2_loader') or \
+      'raginei.jinja2loader.FileSystemLoader'
+    loader_cls = import_string(loader_name)
     template_dir = self.config.get('template_dir') or 'templates'
-    from .jinja2loader import FileSystemLoader, FileSystemLoaderBase
-    if self.debug:
-      loader = FileSystemLoaderBase
-    else:
-      loader = FileSystemLoader
     env_dict = {
-      'loader': loader(os.path.join(self.project_root, template_dir)),
+      'loader': loader_cls(os.path.join(self.project_root, template_dir)),
       #'undefined': NullUndefined,
       'extensions': list(self.iter_jinja2_extensions()),
       }
@@ -305,8 +351,7 @@ class Application(object):
   
   @cached_property
   def debug(self):
-    return 'localhost' == os.environ.get('SERVER_NAME', '') or \
-      os.environ.get('SERVER_SOFTWARE', '').startswith('Dev')
+    return is_debug()
   
   @cached_property
   def project_root(self):
@@ -366,6 +411,7 @@ def soft_unicode(s, encoding='utf-8'):
     return s
   return s
 
+
 def _default_template_context_processor(request):
   values = dict(
     config=config,
@@ -375,6 +421,8 @@ def _default_template_context_processor(request):
   values.update(current_app.template_funcs)
   return values
 
+
+@measure_time
 def fetch(template, values=None):
   values = values or {}
   for processor in current_app.template_context_processors:
@@ -385,9 +433,11 @@ def fetch(template, values=None):
   return current_app.jinja2_env.get_template(
     get_template_path(template)).render(soft_unicode(values))
 
+
 def render(template, **values):
   content_type = values.pop('_content_type', None) or 'text/html'
   return current_app.make_response(fetch(template, values), content_type=content_type)
+
 
 def redirect(endpoint, **values):
   code = values.pop('_code', 302)
@@ -396,17 +446,22 @@ def redirect(endpoint, **values):
   cls = MovedPermanently if 301 == code else Found
   raise cls(url(endpoint, **values))
 
+
 def render_json(value, content_type='application/json'):
   return current_app.make_response(fetch_json(value), content_type=content_type)
+
 
 def render_text(value, content_type='text/plain'):
   return current_app.make_response(value, content_type=content_type)
 
+
 _BLANK_IMAGE = 'GIF89a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00\xff\xff\xff!\xf9'\
   '\x04\x01\x00\x00\x01\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02L\x01\x00;'
 
+
 def render_blank_image():
   return current_app.make_response(_BLANK_IMAGE, content_type='image/gif')
+
 
 def fetch_json(value, sort_keys=True, **kwds):
   try:
@@ -415,17 +470,21 @@ def fetch_json(value, sort_keys=True, **kwds):
     from django.utils import simplejson
   return simplejson.dumps(value, sort_keys=sort_keys, **kwds)
 
+
 _EXCEPTION_MAP = {
   400: exceptions.BadRequest,
   404: exceptions.NotFound,
 }
 
+
 def abort(message=None, code=404):
   raise _EXCEPTION_MAP.get(code, exceptions.InternalServerError)(message)
+
 
 def abort_if(condition, message=None, code=404):
   if condition:
     abort(message, code)
+
 
 def get_template_path(template):
   """
@@ -450,6 +509,7 @@ def get_template_path(template):
     template = template + '.html'
   return template
 
+
 def get_debugged_application_class():
   import inspect
   inspect.getsourcefile = inspect.getfile
@@ -469,6 +529,7 @@ def get_debugged_application_class():
   
   from werkzeug.debug import DebuggedApplication
   return DebuggedApplication
+
 
 def url(endpoint, **values):
   external = values.pop('_external', False)

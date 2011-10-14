@@ -25,7 +25,7 @@ def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
       filename.
   """
   # Read the template file.
-  src_file = file(src_path, 'r')
+  src_file = file(src_path, 'rb')
   try:
     source = src_file.read().decode(encoding)
   except Exception:
@@ -35,7 +35,8 @@ def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
   finally:
     src_file.close()
   
-  if src_path.endswith(('.html', '.htm')):
+  if src_path.endswith( ('.html', '.htm', '.xhtml', '.xhtm') ):
+    from raginei.jinja2loader import TemplateStrip
     source = TemplateStrip.strip(source)
   
   # Compile the template to raw Python code..
@@ -43,7 +44,7 @@ def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
   raw = env.compile(source, name=name, filename=name, raw=True)
   
   # Save to the destination.
-  dst_file = open(dst_path, 'w')
+  dst_file = open(dst_path, 'wb')
   dst_file.write(raw)
   dst_file.close()
   print dst_path
@@ -102,46 +103,10 @@ class ThreadPool(object):
     self._queue.put((func, args, kwds))
   
   def shutdown(self):
-    for thread in self._threads:
+    for _ in self._threads:
       self._queue.put(None) # terminator
     for thread in self._threads:
       thread.join()
-
-
-class TemplateStrip(object):
-
-  SCRIPT_RE = re.compile('(</script.*?>|^)(.*?)(<script.*?>|$)', re.IGNORECASE | re.DOTALL)
-  TEXTAREA_RE = re.compile('(</textarea.*?>|^)(.*?)(<textarea.*?>|$)', re.IGNORECASE | re.DOTALL)
-  TAG_RE = re.compile('(>|^)(.*?)(<|$)', re.DOTALL)
-  SPACE_RE = re.compile(r'[\t\s]*[\r\n]+[\t\s]*', re.MULTILINE)
-  
-  @classmethod
-  def strip(cls, source):
-    return cls.SCRIPT_RE.sub(cls.repl1, source)
-  
-  @classmethod
-  def repl1(cls, matchobj):
-    start = matchobj.group(1)
-    target = matchobj.group(2)
-    end = matchobj.group(3)
-    target = cls.TEXTAREA_RE.sub(cls.repl2, target)
-    return start + target + end
-  
-  @classmethod
-  def repl2(cls, matchobj):
-    start = matchobj.group(1)
-    target = matchobj.group(2)
-    end = matchobj.group(3)
-    target = cls.TAG_RE.sub(cls.repl3, target)
-    return start + target + end
-  
-  @classmethod
-  def repl3(cls, matchobj):
-    start = matchobj.group(1)
-    target = matchobj.group(2)
-    end = matchobj.group(3)
-    target = cls.SPACE_RE.sub('', target)
-    return start + target + end
 
 
 def compile(app, templates_dir, dest_dir, threads=1):
@@ -158,45 +123,56 @@ def main():
   from optparse import OptionParser
   parser = OptionParser()
   
+  parser.add_option('--app', type='string')
   parser.add_option('--gae', type='string')
-  parser.add_option('--templates', type='string', default='templates')
+  parser.add_option('--src', type='string', default='templates')
+  parser.add_option('--dest', type='string')
   parser.add_option('--root', type='string', default='.')
   parser.add_option('--threads', type='int', default=1)
-  parser.add_option('--config', type='string')
   
   options, args = parser.parse_args()
   options = dict([(k, v) for k, v in options.__dict__.iteritems()
     if not k.startswith('_') and v is not None])
   
-  if not options or not options.get('gae'):
-    print 'gae required.'
+  errors = []
+  
+  if not options.get('gae'):
+    errors.append('--gae required.')
+  
+  if not options.get('app'):
+    errors.append('--app required.')
+  
+  if errors:
+    print ', '.join(errors)
     return
   
   root_dir = os.path.abspath(options['root'])
-  templates_dir = os.path.join(root_dir, options['templates'])
-  dest_dir = os.path.join(root_dir, '%s_compiled' % options['templates'])
+  sys.path.insert(0, root_dir)
+  
+  lib_dir = os.path.join(root_dir, 'lib')
+  if path.isdir(lib_dir):
+    sys.path.insert(0, lib_dir)
+  
+  src_dir = os.path.join(root_dir, options['src'])
+  dest_dir = os.path.join(root_dir,
+    options.get('dest') or '%s_compiled' % options['src'])
+  
+  from raginei.path import setup_gae_path
+  
+  setup_gae_path(gae_home=options['gae'])
+  
+  os.environ["APPLICATION_ID"] = 'raginei-jinja2compiler'
+  
+  from werkzeug.utils import import_string
+  
+  app_path = options['app'].split('.')
+  app_module = import_string('.'.join(app_path[:-1]))
+  application = getattr(app_module, app_path[-1])
+  
   if not path.isdir(dest_dir):
     makedirs(dest_dir)
   
-  try:
-    from raginei.path import setup_path
-  except ImportError:
-    sys.path.insert(0, os.path.join(root_dir, 'lib'))
-    from raginei.path import setup_path
-  
-  setup_path(gae_home=options['gae'])
-  
-  os.environ["APPLICATION_ID"] = 'raginei'
-  
-  config = options.get('config') or None
-  if config:
-    from werkzeug.utils import import_string
-    config = import_string(config)
-  
-  from raginei.app import Application
-  application = Application(config)
-  
-  compile(application, templates_dir, dest_dir, options['threads'])
+  compile(application, src_dir, dest_dir, options['threads'])
 
 
 if __name__ == '__main__':

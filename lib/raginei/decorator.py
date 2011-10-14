@@ -22,7 +22,7 @@ def retry_on_error(retries=5, interval=0.1, error=Exception):
   """A decorator to retry a given function performing db operations."""
   
   def is_target(e):
-    if isinstance(error, Exception):
+    if issubclass(error, Exception):
       return isinstance(e, error)
     return error(e)
   

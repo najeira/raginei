@@ -2,30 +2,6 @@
 
 import os
 import sys
-import threading
-
-
-_sys_path = None
-_lock = threading.RLock()
-
-def setup_path(gae_home=None):
-  global _sys_path
-  _lock.acquire()
-  try:
-    if _sys_path is None:
-      if gae_home:
-        setup_gae_path(gae_home)
-      project_home = os.path.abspath(__file__)
-      for _ in range(3):
-        project_home = os.path.dirname(project_home)
-      for v in (project_home, os.path.join(project_home, 'lib')):
-        if v not in sys.path:
-          sys.path.insert(0, v)
-      _sys_path = list(sys.path)
-    else:
-      sys.path[:] = _sys_path
-  finally:
-    _lock.release()
 
 
 def setup_gae_path(gae_home):

@@ -4,6 +4,7 @@ from werkzeug.wrappers import Request as RequestBase, Response as ResponseBase
 from werkzeug.utils import cached_property, redirect
 from werkzeug.contrib.wrappers import DynamicCharsetResponseMixin
 from werkzeug.exceptions import HTTPException
+from .util import json_module
 
 
 class Request(RequestBase):
@@ -31,11 +32,7 @@ class Request(RequestBase):
   @cached_property
   def json(self):
     if self.mimetype == 'application/json':
-      try:
-        import simplejson
-      except ImportError:
-        from django.utils import simplejson
-      return simplejson.loads(self.data)
+      return json_module().loads(self.data)
 
 
 class Response(DynamicCharsetResponseMixin, ResponseBase):
