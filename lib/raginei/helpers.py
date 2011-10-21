@@ -6,7 +6,7 @@ import re
 import jinja2
 from werkzeug.urls import url_quote_plus
 
-from raginei.app import request, url, config, template_filter, template_func
+from raginei.app import request, url, current_app, template_filter, template_func
 
 
 def to_unicode(s, encoding='utf-8', errors='replace'):
@@ -461,13 +461,8 @@ def link_if(env, condition, name, *args, **kwds):
 @template_func()
 @jinja2.environmentfunction
 def image_tag(env, src, **kwds):
-  if not src.startswith('/'):
-    image_path = config.get('html_image_path') or '/static/'
-    if not image_path.startswith('/'):
-      image_path = '/' + image_path
-    if not image_path.endswith('/'):
-      image_path = image_path + '/'
-    src = image_path + src
+  if not src.startswith('/') and not src.startswith('http'):
+    src = current_app.static_dir + src
   result = u'<img src="%s"%s />' % (jinja2.escape(src), html_options(env, **kwds))
   return to_markup(env, result)
 

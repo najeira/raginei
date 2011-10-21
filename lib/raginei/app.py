@@ -360,6 +360,15 @@ class Application(object):
       return os.path.dirname(parent)
     return parent
   
+  @cached_property
+  def static_dir(self):
+    path = config.get('static_dir') or '/static/'
+    if not path.startswith('/'):
+      path = '/' + path
+    if not path.endswith('/'):
+      path = path + '/'
+    return path
+  
   def route(self, rule, **options):
     if not rule.startswith('/'):
       rule = '/' + rule
