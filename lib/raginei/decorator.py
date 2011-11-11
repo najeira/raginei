@@ -5,7 +5,6 @@ import functools
 import time
 from google.appengine.ext import db
 from google.appengine.runtime import apiproxy_errors
-from . import util
 
 
 def is_datastore_timeout(ex):
@@ -43,27 +42,5 @@ def retry_on_error(retries=5, interval=0.1, error=Exception):
         logging.warning('Retrying function %r in %f secs'
           % (func, wait_secs))
         time.sleep(wait_secs)
-    return _wrapper
-  return _decorator
-
-
-def memcache(expiry=300):
-  """A decorator to memoize functions in the memcache."""
-  from google.appengine.api import memcache
-  def _decorator(func):
-    @functools.wraps(func)
-    def _wrapper(*args, **kwds):
-      force = kwds.pop('_force', False)
-      #If the key is longer then max key size, it will be hashed with sha1
-      #and will be replaced with the hex representation of the said hash.
-      key = 'memcache:%s:%s' % (util.funcname(func), util.to_str(*args, **kwds))
-      data = None if force and expiry else memcache.get(key)
-      if data is None:
-        data = func(*args, **kwds)
-        if expiry:
-          memcache.set(key, data, expiry)
-      else:
-        logging.debug('memcache: use cache of %s' % key)
-      return data
     return _wrapper
   return _decorator
