@@ -432,8 +432,7 @@ def _default_template_context_processor(request):
 
 
 @measure_time
-def fetch(template, values=None):
-  values = values or {}
+def fetch(template, **values):
   for processor in current_app.template_context_processors:
     ret = processor(current_app.request)
     if ret:
@@ -445,7 +444,7 @@ def fetch(template, values=None):
 
 def render(template, **values):
   content_type = values.pop('_content_type', None) or 'text/html'
-  return current_app.make_response(fetch(template, values), content_type=content_type)
+  return current_app.make_response(fetch(template, **values), content_type=content_type)
 
 
 def redirect(endpoint, **values):
