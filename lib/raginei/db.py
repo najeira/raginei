@@ -7,6 +7,8 @@ raginei.db
 :license: Apache License 2.0, see LICENSE for more details.
 """
 
+from __future__ import with_statement
+
 from google.appengine.ext.db import *
 
 import os
@@ -26,103 +28,28 @@ from . import timezone
 from . import util
 
 
-_local = threading.local()
-
-_local.default_config = {
-  'get': {'deadline': 5, 'interval': 0.1, 'retries': 0},
-  'put': {'deadline': 10, 'interval': 0.1, 'retries': 0},
-  }
+_lock = threading.RLock()
+_orig_get = get
+_orig_put = put
+_orig_put_async = put_async
 
 
-def set_default_config(**kwds):
-  """デフォルトの設定を変更します。
-  
-  Args:
-    get_deadline: get時のdeadline
-    get_interval: get時のinterval
-    get_retries: get時のリトライ回数
-    put_deadline: put時のdeadline
-    put_interval: put時のinterval
-    put_retries: put時のリトライ回数
-  """
-  for k, v in kwds.iteritems():
-    if v is not None:
-      typ, column = k.split('_')
-      _local.default_config[typ][column] = v
-
-
-def run_in_config_get_decorator(deadline=None, interval=None, retries=None):
-  """getの設定を一時的に変更して関数を実行するためのデコレータを返します。
-  
-  >>> @db.run_in_config_get_decorator(...)
-  >>> def func():
-  >>>   ...
-  >>> func()
-  """
-  return _run_in_config_onetime_decorator(
-    'get', deadline=deadline, interval=interval, retries=retries)
-
-
-def run_in_config_put_decorator(deadline=None, interval=None, retries=None):
-  """putの設定を一時的に変更して関数を実行するためのデコレータを返します。
-  
-  >>> @db.run_in_config_get_decorator(...)
-  >>> def func():
-  >>>   ...
-  >>> func()
-  """
-  return _run_in_config_onetime_decorator(
-    'put', deadline=deadline, interval=interval, retries=retries)
-
-
-def _run_in_config_onetime_decorator(config_type, deadline=None, interval=None, retries=None):
-  def _decorator(func):
-    @functools.wraps(func)
-    def _wrapper(*args, **kwds):
-      before = _local.default_config[config_type].copy()
-      try:
-        set_default_config(**{
-          '%s_deadline' % config_type: deadline,
-          '%s_interval' % config_type: interval,
-          '%s_retries' % config_type: retries})
-        return func(*args, **kwds)
-      finally:
-        _local.default_config[config_type] = before
-    return _wrapper
-  return _decorator
-
-
-def run_in_config_get(func):
-  """getの設定に従って関数を実行します"""
-  return _run_in_config_decorator(func, lambda: _local.default_config['get'])
-
-
-def run_in_config_put(func):
-  """putの設定に従って関数を実行します"""
-  return _run_in_config_decorator(func, lambda: _local.default_config['put'])
-
-
-def _run_in_config_decorator(func, get_default_config):
+def _setup_confg(func, deadline, retries, interval, read_policy=None):
   """指定された設定で関数を呼び出すためのデコレータです。
   
   この関数はconfig引数を受け付けるdb.get、db.putに対して使用します。
   """
-  funcname = util.funcname(func)
-  
   @functools.wraps(func)
   def _wrapper(*args, **kwds):
-    default = get_default_config() or {}
     config = kwds.get('config')
-    
-    deadline = default.get('deadline', 30)
-    retries = default.get('retries', 0)
-    interval = default.get('interval', 0.1)
-    
     new_config = None
     if config:
-      deadline = config.deadline or deadline
+      new_deadline = config.deadline or deadline
+      if config.read_policy is None and read_policy:
+        new_config = create_config(deadline=new_deadline, read_policy=read_policy)
+        new_config.merge(config)
     elif deadline:
-      new_config = create_config(deadline=deadline)
+      new_config = create_config(deadline=deadline, read_policy=read_policy)
     
     tries = 0
     while True:
@@ -143,7 +70,7 @@ def _run_in_config_decorator(func, get_default_config):
       #sleep
       wait_secs = interval * tries ** 2
       logging.warning('Retrying function %s in %f secs: %r' % (
-        funcname, wait_secs, e))
+        func.__name__, wait_secs, e))
       if wait_secs:
         time.sleep(wait_secs)
       
@@ -155,17 +82,7 @@ def _run_in_config_decorator(func, get_default_config):
   return _wrapper
 
 
-def run_in_deadline_get(func):
-  """getのdeadline設定に従って関数を実行します"""
-  return _run_in_deadline_decorator(func, lambda: _local.default_config['get'])
-
-
-def run_in_deadline_put(func):
-  """putのdeadline設定に従って関数を実行します"""
-  return _run_in_deadline_decorator(func, lambda: _local.default_config['put'])
-
-
-def _run_in_deadline_decorator(func, get_default_config):
+def _setup_deadline(func, deadline):
   """指定されたdeadline設定で関数を呼び出すためのデコレータです。
   
   この関数はconfig引数を受け付けるdb.get、db.putに対して使用します。
@@ -174,8 +91,6 @@ def _run_in_deadline_decorator(func, get_default_config):
   def _wrapper(*args, **kwds):
     config = kwds.get('config')
     if not config or not config.deadline:
-      default = get_default_config() or {}
-      deadline = default.get('deadline', 30)
       new_config = create_config(deadline=deadline)
       if config:
         new_config = config.merge(new_config)
@@ -184,53 +99,25 @@ def _run_in_deadline_decorator(func, get_default_config):
   return _wrapper
 
 
-_orig_get = get
-_orig_get_async = get_async
+def getter(deadline=5, retries=3, interval=0.1, read_policy=STRONG_CONSISTENCY):
+  return getter_config(_orig_get, deadline, retries, interval, read_policy)
 
 
-@run_in_deadline_get
-def get_async(keys, **kwargs):
-  return _orig_get_async(keys, **kwargs)
-
-
-@run_in_config_get
-def get(keys, **kwargs):
-  """指定されたKeyのエンティティを取得します。
+def getter_config(func=None, deadline=5, retries=3, interval=0.1, read_policy=STRONG_CONSISTENCY):
+  if func is None:
+    return lambda _func: _create_getter(func=_func, deadline=deadline, retries=retries,
+      interval=interval, read_policy=read_policy)
   
-  この関数は、設定によってタイムアウト時にリトライを行います。
+  func_tx = _setup_deadline(func, deadline)
+  func_normal = _setup_confg(func, deadline, retries, interval, read_policy)
   
-  Args:
-    keys: KeyまたはKeyのリスト
-  
-  Returns:
-    Keyを指定した場合、エンティティ。エンティティが存在しない場合はNoneです。
-    Keyのリストを指定した場合、エンティティのリスト。
-    エンティティが存在しない場合はリスト中にNoneが入ります。
-  """
-  if not is_in_transaction() and isinstance(keys, list) and 2 <= len(keys):
-    config = kwargs.get('config')
-    if config:
-      if config.read_policy is None:
-        new_config = create_config(read_policy=EVENTUAL_CONSISTENCY)
-        new_config.merge(config)
-        config = new_config
+  @functools.wraps(func)
+  def _wrapper(*args, **kwds):
+    if is_in_transaction():
+      return func_tx(*args, **kwds)
     else:
-      kwargs['config'] = create_config(read_policy=EVENTUAL_CONSISTENCY)
-  return _orig_get(keys, **kwargs)
-
-
-_orig_put = put
-_orig_put_async = put_async
-
-
-@run_in_config_put
-def _put_in_config(models, **kwargs):
-  return _orig_put(models, **kwargs)
-
-
-@run_in_deadline_put
-def _put_async_in_deadline(models, **kwargs):
-  return _orig_put_async(models, **kwargs)
+      return func_normal(*args, **kwds)
+  return _wrapper
 
 
 def _before_put(models):
@@ -242,48 +129,32 @@ def _before_put(models):
     model.validate()
 
 
+def putter(deadline=5, retries=3, interval=0.1):
+  func = _setup_confg(_orig_put, deadline, retries, interval)
+  func_tx = _setup_deadline(_orig_put, deadline)
+  def _wrapper(models, **kwargs):
+    if is_in_transaction():
+      _before_put(models)
+      return func_tx(models, **kwargs)
+    else:
+      assign_keys(models)
+      _before_put(models)
+      return func(models, **kwargs)
+
+
+get = getter()
+put = putter()
+
+
 def put_async(models, **kwargs):
-  if is_in_transaction():
-    _before_put(models)
-    return _orig_put_async(models, **kwargs)
-  else:
-    assign_keys(models)
-    _before_put(models)
-    return _put_async_in_deadline(models, **kwargs)
+  _before_put(models)
+  return _orig_put_async(models, **kwargs)
 
 
-def put(models, **kwargs):
-  """エンティティを保存します。
-  
-  この関数は、設定によってタイムアウト時にリトライを行います。
-  Keyが割り当てられていないエンティティに対しては、
-  保存の前にKeyを割り当てるため、リトライによる多重保存はありません。
-  
-  ただし、トランザクション中に呼び出された場合は、
-  リトライもKeyの割り当ても行いません。
-  トランザクションのリトライはアプリケーション側で行う必要があります。
-  
-  Args:
-    models: エンティティまたはエンティティのリスト
-  
-  Returns:
-    エンティティを指定した場合、Key。
-    エンティティのリストを指定した場合、Keyのリスト。
-  """
-  
-  if is_in_transaction():
-    _before_put(models)
-    return _orig_put(models, **kwargs)
-  else:
-    assign_keys(models)
-    _before_put(models)
-    return _put_in_config(models, **kwargs)
+_transactional_org = transactional
 
 
-save = put
-
-
-def run_in_transaction_retries(retries=3, interval=0.1):
+def transactional(func=None, retries=3, interval=0.1, **options):
   """関数をトランザクション内で実行します。
   処理が失敗した場合は、データストアに対する操作はロールバックされます。
   
@@ -294,14 +165,14 @@ def run_in_transaction_retries(retries=3, interval=0.1):
   このデコレータはタイムアウトでリトライするということです。
   run_in_transactionはトランザクションのエラーのみリトライします。
   
-  >>> @run_in_transaction_retries()
+  >>> @transactional
   >>> def some_func(arg):
   >>>  ...
   >>> some_func(arg)
   
   >>> def some_func(arg):
   >>>  ...
-  >>> run_in_transaction_retries()(some_func)(arg)
+  >>> transactional(some_func)(arg)
   
   Args:
     function: トランザクション内で実行する関数
@@ -311,13 +182,16 @@ def run_in_transaction_retries(retries=3, interval=0.1):
   Returns:
     指定された関数の戻り値を、そのまま返します。
   """
-  def _decorator(func):
-    @decorator.retry_on_timeout(retries, interval)
-    @functools.wraps(func)
-    def _wrapper(*args, **kwds):
-      return run_in_transaction(func, *args, **kwds)
-    return _wrapper
-  return _decorator
+  if func is None:
+    return lambda _func: transactional(
+      func=_func, retries=retries, interval=interval, **options)
+  
+  @decorator.retry_on_timeout(retries, interval)
+  @_transactional_org(**options)
+  @functools.wraps(func)
+  def _wrapper(*args, **kwds):
+    return func(*args, **kwds)
+  return _wrapper
 
 
 _orig_allocate_ids = allocate_ids
@@ -356,13 +230,14 @@ def allocate_keys(cls, count, parent=None):
     確保したKeyのリスト
   """
   
-  #fetch from cache
   kind = cls.kind()
-  if kind in _allocated_keys and _allocated_keys[kind]:
-    keys = _allocated_keys[kind][0:count]
-    del _allocated_keys[kind][0:count]
-  else:
-    keys = []
+  keys = []
+  
+  #fetch from cache
+  with _lock:
+    if kind in _allocated_keys and _allocated_keys[kind]:
+      keys = _allocated_keys[kind][0:count]
+      del _allocated_keys[kind][0:count]
   
   #cache exists?
   count = count - len(keys)
@@ -381,12 +256,13 @@ def allocate_keys(cls, count, parent=None):
   #put keys to cache
   amari = last - first - count + 1
   if amari:
-    if kind not in _allocated_keys:
-      _allocated_keys[kind] = []
-    for i in xrange(amari):
-      _allocated_keys[kind].append(
-        Key.from_path(kind, first + count + i, parent=parent))
-  
+    with _lock:
+      if kind not in _allocated_keys:
+        _allocated_keys[kind] = []
+      for i in xrange(amari):
+        _allocated_keys[kind].append(
+          Key.from_path(kind, first + count + i, parent=parent))
+    
   return keys
 
 
@@ -506,7 +382,7 @@ class ModelMixin(object):
     return Key.from_path(cls.kind(), ret, parent=parent)
 
   @classmethod
-  @run_in_config_get
+  @getter_config
   def get(cls, key, parent=None, **kwds):
     """指定されたKeyのエンティティを取得します。
     
@@ -544,7 +420,7 @@ class ModelMixin(object):
       return super(ModelMixin, cls).get(cls.to_key(key, parent), **kwds)
   
   @classmethod
-  @run_in_config_get
+  @getter_config
   def get_by_id(cls, ids, parent=None, **kwds):
     """指定された数値IDのエンティティを取得します。
     
@@ -558,9 +434,9 @@ class ModelMixin(object):
       エンティティが存在しない場合はNoneを含むリスト。
     """
     return super(ModelMixin, cls).get_by_id(ids, parent, **kwds)
-
+  
   @classmethod
-  @run_in_config_get
+  @getter_config
   def get_by_key_name(cls, key_names, parent=None, **kwds):
     """指定されたキー名のエンティティを取得します。
     
@@ -686,7 +562,7 @@ class ModelMixin(object):
       method=_method, **kwds)
   
   @classmethod
-  @run_in_transaction_retries()
+  @transactional
   def _insert_impl_tx(cls, key=None, key_name=None, id=None, parent=None,
     method=None, **kwds):
     assert key or key_name or id
@@ -1976,7 +1852,7 @@ class RagineiUniqueKey(Model):
     return cls._put_unique_impl(value, owner)
   
   @classmethod
-  @run_in_transaction_retries()
+  @transactional
   def _put_unique_impl(cls, value, owner=None):
     entity = cls.get_by_key_name(value)
     if entity:
@@ -2042,3 +1918,29 @@ def delete_uniques_by_owner(owner):
 
 class RagineiFlag(Model):
   """"""
+
+
+class QueryIterator(object):
+  
+  def __init__(self, query, limit=None):
+    assert query
+    assert limit
+    self.limit = limit
+    self.count = 0
+    if limit:
+      config = datastore_query.QueryOptions(limit=limit, prefetch_size=limit)
+    else:
+      config = None
+    self.iterator = query.run(config=config)
+  
+  def __iter__(self):
+    return self
+  
+  def next(self):
+    if self.limit <= self.count:
+      raise StopIteration()
+    self.count += 1
+    return self.iterator.next()
+  
+  def get_result(self):
+    return [e for e in self]
