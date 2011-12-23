@@ -2,7 +2,7 @@
 
 import datetime
 from werkzeug.contrib.securecookie import SecureCookie
-from raginei.app import current_app, request
+from raginei.app import current_app, request, session, local
 
 def register(server):
   
@@ -10,14 +10,14 @@ def register(server):
   def load(request):
     secret = current_app.config.get('session_secret')
     if secret:
-      current_app.session = SecureCookie.load_cookie(request,
+      local.session = SecureCookie.load_cookie(request,
         current_app.config.get('session_cookie_name') or 'session', secret_key=secret)
   
   @server.response_middleware
   def save(response):
     secret = current_app.config.get('session_secret')
     if secret:
-      session = current_app.session
+      session = local.session
       if session:
         if not isinstance(session, SecureCookie):
           session = SecureCookie(session, secret)
@@ -30,14 +30,14 @@ def register(server):
 
 
 def flash(message, category='message'):
-  current_app.session.setdefault('_flashes', []).append((category, message))
+  session.setdefault('_flashes', []).append((category, message))
 
 
 def get_flashed_messages(with_categories=False):
   try:
     flashes = request._flashes
   except AttributeError:
-    flashes = request._flashes = current_app.session.pop('_flashes', [])
+    flashes = request._flashes = session.pop('_flashes', [])
   if not with_categories:
     return [x[1] for x in flashes]
   return flashes

@@ -13,6 +13,9 @@ import logging
 import functools
 import time
 
+from google.appengine.ext.ndb.tasklets import tasklet, Return
+from google.appengine.ext.ndb.context import toplevel
+
 from jinja2 import Environment
 
 from werkzeug import exceptions
@@ -27,8 +30,8 @@ local = Local()
 local_manager = LocalManager([local])
 
 current_app = local('current_app')
-session = LocalProxy(lambda: current_app.session)
-request = LocalProxy(lambda: current_app.request)
+request = local('request')
+session = local('session')
 config = LocalProxy(lambda: current_app.config)
 
 _routes = []
@@ -64,7 +67,6 @@ class Application(object):
   
   def __init__(self, config=None, **kwds):
     self.config = self.load_config(config, **kwds)
-    self.session = {}
     self.view_functions = {}
     self.url_map = Map()
     self.url_map.strict_slashes = self.config.get('url_strict_slashes', False)
@@ -153,7 +155,7 @@ class Application(object):
   def process_request(self):
     if self.request_middlewares:
       for mw in self.request_middlewares:
-        response = mw(self.request)
+        response = mw(request)
         if response:
           return response
   
@@ -168,14 +170,14 @@ class Application(object):
   def process_routing(self, endpoint):
     if self.routing_middlewares:
       for mw in self.routing_middlewares:
-        endpoint = mw(self.request, endpoint) or endpoint
+        endpoint = mw(request, endpoint) or endpoint
     return endpoint
   
   @measure_time
   def process_view(self, view_func):
     if self.view_middlewares:
       for mw in self.view_middlewares:
-        response = mw(self.request, view_func, **self.request.view_args)
+        response = mw(request, view_func, **(request.view_args))
         if response:
           return response
   
@@ -183,7 +185,7 @@ class Application(object):
   def process_exception(self, e):
     if self.exception_middlewares:
       for mw in self.exception_middlewares:
-        response = mw(self.request, e)
+        response = mw(request, e)
         if response:
           return response
   
@@ -202,14 +204,14 @@ class Application(object):
   
   def dispatch_request(self):
     try:
-      if self.request.routing_exception:
-        raise self.request.routing_exception
-      view_func = self.get_view_func(self.request.url_rule.endpoint)
+      if request.routing_exception:
+        raise request.routing_exception
+      view_func = self.get_view_func(request.url_rule.endpoint)
       response = self.process_view(view_func)
       if response:
         return response
       try:
-        return self.process_view_func(view_func, self.request.view_args)
+        return self.process_view_func(view_func, request.view_args)
       except Exception, e:
         response = self.process_exception(e)
         if response:
@@ -224,18 +226,16 @@ class Application(object):
   
   @measure_time
   def process_view_func(self, view_func, context):
-    value = view_func(**context)
-    if isinstance(value, (tuple, list)):
-      template, context = value
-    elif isinstance(value, dict):
-      template, context = None, value
-    elif isinstance(value, basestring):
-      template, context= value, None
-    elif value:
-      return value
-    else:
-      template, context= None, None
-    return render(self._setup_template(view_func, template), context)
+    result = view_func(**context)
+    if not isinstance(result, self.response_class) \
+      and not isinstance(result, basestring):
+      result = result.get_result()
+    return self.view_func_result_to_response(result)
+  
+  def view_func_result_to_response(self, result):
+    if isinstance(result, self.response_class):
+      return result
+    return self.make_response(result)
   
   def _setup_template(self, view_func, template):
     if not template:
@@ -252,16 +252,16 @@ class Application(object):
   
   def init_context(self, environ):
     local.current_app = self
-    self.request = self.request_class(environ)
+    local.request = self.request_class(environ)
     self.init_url_adapter(environ)
   
   def init_url_adapter(self, environ):
     self.url_adapter = self.url_map.bind_to_environ(environ)
     try:
-      self.request.url_rule, self.request.view_args = \
+      request.url_rule, request.view_args = \
         self.url_adapter.match(return_rule=True)
     except exceptions.HTTPException, e:
-      self.request.routing_exception = e
+      request.routing_exception = e
   
   def release_context(self):
     local_manager.cleanup()
@@ -287,7 +287,7 @@ class Application(object):
           response.set_cookie(d.pop('key'), **d)
         del local.override_cookies
   
-  def __call__(self, environ, start_response):
+  def do_run(self, environ, start_response):
     self.init_context(environ)
     try:
       ret = self.process_request()
@@ -299,6 +299,17 @@ class Application(object):
       return response(environ, start_response)
     finally:
       self.release_context()
+  
+  def __call__(self, environ, start_response):
+    return self.do_run(environ, start_response)
+  
+  @classmethod
+  def instance(cls, *args, **kwds):
+    obj = cls(*args, **kwds)
+    # wrap the application
+    if obj.debug:
+      return get_debugged_application_class()(obj, evalex=True)
+    return obj
   
   def run(self):
     # wrap the application
@@ -434,7 +445,7 @@ def _default_template_context_processor(request):
 @measure_time
 def fetch(template, **values):
   for processor in current_app.template_context_processors:
-    ret = processor(current_app.request)
+    ret = processor(request)
     if ret:
       values.update(ret)
   values['url'] = url
@@ -555,8 +566,14 @@ def url(endpoint, **values):
 
 def route(*args, **kwds):
   def decorator(f):
-    _routes.append( (args, kwds, f) )
-    return f
+    if not getattr(f, '_is_toplevel_', None):
+      flet = toplevel(f)
+      flet.__module__ = f.__module__
+      f._is_toplevel_ = True
+    else:
+      flet = f
+    _routes.append( (args, kwds, flet) )
+    return flet
   return decorator
 
 
