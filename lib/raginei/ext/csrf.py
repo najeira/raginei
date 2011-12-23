@@ -6,7 +6,7 @@ import base64
 import jinja2
 
 from raginei.app import session, abort, template_func
-from raginei.helpers import to_markup, input_hidden, form_tag as form_tag_base
+from raginei.helpers import to_markup, input_tag, form_tag as form_tag_base
 
 
 _exempts = []
@@ -41,7 +41,7 @@ def register(server):
 @template_func()
 @jinja2.environmentfunction
 def csrf_tag(env, **kwds):
-  return input_hidden(env, '_csrf', csrf_token(), **kwds)
+  return input_tag(env, 'hidden', '_csrf', csrf_token(), **kwds)
 
 
 @template_func()

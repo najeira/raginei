@@ -264,7 +264,7 @@ def check_or_radio_tag_one(env, type, name, choices, value=None):
     params['checked'] = u'checked'
   
   label = label_tag(env, tag_id, choice)
-  input = input_type(env, type, name, elem, **params)
+  input = input_tag(env, type, name, elem, **params)
   
   result = input + label
   return to_markup(env, result)
@@ -394,34 +394,16 @@ def format_number(s):
     for i in range(0, slen + ((3 - (slen % 3)) % 3), 3)]))
 
 
-@template_func()
+@template_func('input')
 @jinja2.environmentfunction
-def input_text(env, name, value='', **kwds):
-  value = _form_get(name, value)
-  return input_type(env, 'text', name, value, **kwds)
-
-
-@template_func()
-@jinja2.environmentfunction
-def input_hidden(env, name, value='', **kwds):
-  value = _form_get(name, value)
-  return input_type(env, 'hidden', name, value, **kwds)
-
-
-@template_func()
-@jinja2.environmentfunction
-def input_password(env, name, value='', **kwds):
-  value = _form_get(name, value)
-  return input_type(env, 'password', name, value, **kwds)
-
-
-def input_type(env, type, name, value='', **kwds):
+def input_tag(env, type, name, value='', **kwds):
   e_name = jinja2.escape(name)
   e_type = jinja2.escape(type)
   e_value = jinja2.escape(value)
+  tag_id = kwds.pop('id', None) or ('form_' + e_name)
   options = html_options(env, **kwds)
-  result = u'<input id="form_%s" type="%s" name="%s" value="%s" %s />' % (
-    e_name, e_type, e_name, e_value, options)
+  result = u'<input id="%s" type="%s" name="%s" value="%s" %s />' % (
+    tag_id, e_type, e_name, e_value, options)
   return to_markup(env, result)
 
 
