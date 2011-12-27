@@ -402,8 +402,12 @@ def input_tag(env, type, name, value='', **kwds):
   e_value = jinja2.escape(value)
   tag_id = kwds.pop('id', None) or ('form_' + e_name)
   options = html_options(env, **kwds)
-  result = u'<input id="%s" type="%s" name="%s" value="%s" %s />' % (
-    tag_id, e_type, e_name, e_value, options)
+  if 'textarea' == type:
+    result = u'<textarea id="%s" name="%s" %s >%s</textarea>' % (
+      tag_id, e_name, options, e_value)
+  else:
+    result = u'<input id="%s" type="%s" name="%s" value="%s" %s />' % (
+      tag_id, e_type, e_name, e_value, options)
   return to_markup(env, result)
 
 
