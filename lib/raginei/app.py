@@ -7,14 +7,17 @@ raginei.app
 :license: Apache License 2.0, see LICENSE for more details.
 """
 
+from __future__ import with_statement
+
 import sys
 import os
 import logging
 import functools
 import time
+import threading
 
-from google.appengine.ext.ndb.tasklets import tasklet, Return
-from google.appengine.ext.ndb.context import toplevel
+from google.appengine.ext.ndb.tasklets import tasklet as tasklet_ndb
+from google.appengine.ext.ndb.context import toplevel as toplevel_ndb
 
 from jinja2 import Environment
 
@@ -32,8 +35,10 @@ local_manager = LocalManager([local])
 current_app = local('current_app')
 request = local('request')
 session = local('session')
+url_adapter = local('url_adapter')
 config = LocalProxy(lambda: current_app.config)
 
+_lock = threading.RLock()
 _routes = []
 _context_processors = []
 _template_filters = {}
@@ -120,31 +125,34 @@ class Application(object):
   def register_extensions(self, funcs):
     self.register_extension_session()
     self.register_extension_csrf()
-    
     if funcs:
       for name in funcs:
         func = import_string(name)
         func(self)
   
   def init_routes(self):
-    for args, kwds, f in _routes:
-      self.route(*args, **kwds)(f)
+    with _lock:
+      for args, kwds, endpoint in _routes:
+        kwds['endpoint'] = endpoint
+        self.add_url_rule(*args, **kwds)
   
   def init_templates(self):
-    for f in _context_processors:
-      self.context_processor(f)
-    
-    for name, f in _template_filters.iteritems():
-      self.template_filter(name)(f)
-    
-    for name, f in _template_funcs.iteritems():
-      self.template_func(name)(f)
+    with _lock:
+      for f in _context_processors:
+        self.context_processor(f)
+      for name, f in _template_filters.iteritems():
+        self.template_filter(name)(f)
+      for name, f in _template_funcs.iteritems():
+        self.template_func(name)(f)
   
-  def add_url_rule(self, rule, endpoint, view_func=None, **options):
+  def add_url_rule(self, rule, endpoint, **options):
+    if not rule.startswith('/'):
+      rule = '/' + rule
+    options.setdefault('methods', ('GET', 'POST', 'OPTIONS'))
     options['endpoint'] = endpoint
-    options.setdefault('methods', ('GET',))
-    self.url_map.add(Rule(rule, **options))
-    self.view_functions[endpoint] = view_func or endpoint
+    with _lock:
+      self.url_map.add(Rule(rule, **options))
+      self.view_functions[endpoint] = endpoint
   
   def make_response(self, *args, **kwds):
     if 1 == len(args) and not isinstance(args[0], basestring):
@@ -189,17 +197,26 @@ class Application(object):
         if response:
           return response
   
+  def load_view_func(self, endpoint, view_func):
+    with _lock:
+      if isinstance(view_func, tuple):
+        view_classname, args, kwargs = view_func
+        view_cls = import_string('views.' + view_classname)
+        view_func = view_cls(*args, **kwargs)
+      elif isinstance(view_func, basestring):
+        view_func = import_string('views.' + view_func)
+      else:
+        return view_func
+      assert callable(view_func)
+      self.view_functions[endpoint] = view_func
+      return view_func
+  
   def get_view_func(self, endpoint):
     local.endpoint = endpoint = self.process_routing(endpoint)
     view_func = self.view_functions[endpoint]
-    if isinstance(view_func, tuple):
-      view_classname, args, kwargs = view_func
-      view_cls = import_string('views.' + view_classname)
-      view_func = view_cls(*args, **kwargs)
-    elif isinstance(view_func, basestring):
-      view_func = import_string('views.' + view_func)
+    if isinstance(view_func, (tuple, basestring)):
+      view_func = self.load_view_func(endpoint, view_func)
     assert callable(view_func)
-    self.view_functions[endpoint] = view_func
     return view_func
   
   def dispatch_request(self):
@@ -222,14 +239,18 @@ class Application(object):
     except SystemExit:
       raise # Allow sys.exit() to actually exit.
     except Exception, e:
+      if self.debug:
+        raise
       return self.handle_exception(e)
   
   @measure_time
   def process_view_func(self, view_func, context):
     result = view_func(**context)
-    if not isinstance(result, self.response_class) \
-      and not isinstance(result, basestring):
-      result = result.get_result()
+    if not isinstance(result, self.response_class):
+      if isinstance(result, (RequestRedirect, Found)):
+        result = result.get_response(None)
+      elif not isinstance(result, basestring):
+        result = result.get_result()
     return self.view_func_result_to_response(result)
   
   def view_func_result_to_response(self, result):
@@ -245,8 +266,6 @@ class Application(object):
     return template
   
   def handle_exception(self, e):
-    if self.debug:
-      raise
     handler = self.error_handlers.get(getattr(e, 'code', 500))
     return handler(e) if handler else e
   
@@ -256,10 +275,9 @@ class Application(object):
     self.init_url_adapter(environ)
   
   def init_url_adapter(self, environ):
-    self.url_adapter = self.url_map.bind_to_environ(environ)
+    local.url_adapter = url_adapter = self.url_map.bind_to_environ(environ)
     try:
-      request.url_rule, request.view_args = \
-        self.url_adapter.match(return_rule=True)
+      request.url_rule, request.view_args = url_adapter.match(return_rule=True)
     except exceptions.HTTPException, e:
       request.routing_exception = e
   
@@ -380,37 +398,33 @@ class Application(object):
       path = path + '/'
     return path
   
-  def route(self, rule, **options):
-    if not rule.startswith('/'):
-      rule = '/' + rule
-    options.setdefault('methods', ('GET', 'POST', 'OPTIONS'))
-    def decorator(f):
-      self.add_url_rule(rule, '.'.join(funcname(f).split('.')[1:]), f, **options)
-      return f
-    return decorator
-  
   def context_processor(self, f):
-    self.template_context_processors.append(f)
+    with _lock:
+      self.template_context_processors.append(f)
     return f
   
   def template_filter(self, name=None):
     def decorator(f):
-      self.jinja2_env.filters[name or f.__name__] = f
+      with _lock:
+        self.jinja2_env.filters[name or f.__name__] = f
       return f
     return decorator
   
   def template_func(self, name=None):
     def decorator(f):
-      self.template_funcs[name or f.__name__] = f
+      with _lock:
+        self.template_funcs[name or f.__name__] = f
       return f
     return decorator
   
   def request_middleware(self, f):
-    self.request_middlewares.append(f)
+    with _lock:
+      self.request_middlewares.append(f)
     return f
   
   def response_middleware(self, f):
-    self.response_middlewares.insert(0, f)
+    with _lock:
+      self.response_middlewares.insert(0, f)
     return f
 
 
@@ -458,12 +472,16 @@ def render(template, **values):
   return current_app.make_response(fetch(template, **values), content_type=content_type)
 
 
-def redirect(endpoint, **values):
+def make_redirect(endpoint, **values):
   code = values.pop('_code', 302)
   permanent = values.pop('_permanent', False)
   code = 301 if permanent else code
   cls = MovedPermanently if 301 == code else Found
-  raise cls(url(endpoint, **values))
+  return cls(url(endpoint, **values))
+
+
+def redirect(endpoint, **values):
+  raise make_redirect(endpoint, **values)
 
 
 def render_json(value, content_type='application/json'):
@@ -484,10 +502,13 @@ def render_blank_image():
 
 def fetch_json(value, sort_keys=True, **kwds):
   try:
-    import simplejson
+    import json
   except ImportError:
-    from django.utils import simplejson
-  return simplejson.dumps(value, sort_keys=sort_keys, **kwds)
+    try:
+      import simplejson as json
+    except ImportError:
+      from django.utils import simplejson as json
+  return json.dumps(value, sort_keys=sort_keys, **kwds)
 
 
 _EXCEPTION_MAP = {
@@ -496,13 +517,13 @@ _EXCEPTION_MAP = {
 }
 
 
-def abort(message=None, code=404):
+def abort(code=404, message=None):
   raise _EXCEPTION_MAP.get(code, exceptions.InternalServerError)(message)
 
 
-def abort_if(condition, message=None, code=404):
+def abort_if(condition, code=404, message=None):
   if condition:
-    abort(message, code)
+    abort(code, message)
 
 
 def get_template_path(template):
@@ -530,22 +551,6 @@ def get_template_path(template):
 
 
 def get_debugged_application_class():
-  import inspect
-  inspect.getsourcefile = inspect.getfile
-  
-  from werkzeug.debug.console import HTMLStringO
-  def seek(self, n, mode=0):
-    pass
-  def readline(self):
-    if not len(self._buffer):
-      return ''
-    ret = self._buffer[0]
-    del self._buffer[0]
-    return ret
-  # Apply all other patches.
-  HTMLStringO.seek = seek
-  HTMLStringO.readline = readline
-  
   from werkzeug.debug import DebuggedApplication
   return DebuggedApplication
 
@@ -554,43 +559,66 @@ def url(endpoint, **values):
   external = values.pop('_external', False)
   if endpoint.startswith('/'):
     ret = endpoint
-    if external:
-      scheme = 'https' if request.is_secure else 'http'
-      ret = '%s://%s%s' % (scheme, os.environ['SERVER_NAME'], ret)
   else:
     if endpoint.startswith('.'):
       endpoint = endpoint[1:]
-    ret = current_app.url_adapter.build(endpoint, values, force_external=external)
+    ret = url_adapter.build(endpoint, values, force_external=external)
+    if not ret.startswith('/'):
+      ret = '/' + ret
+  if external:
+    scheme = 'https' if request.is_secure else 'http'
+    ret = '%s://%s%s' % (scheme, request.environ['SERVER_NAME'], ret)
   return ret
+
+
+def tasklet(func):
+  if getattr(func, '_is_tasklet_', None):
+    return func
+  if getattr(func, '_is_toplevel_', None):
+    return func
+  flet = tasklet_ndb(func)
+  flet._is_tasklet_ = True
+  return flet
+
+
+def toplevel(func):
+  if getattr(func, '_is_toplevel_', None):
+    return func
+  flet = toplevel_ndb(func)
+  flet.__module__ = func.__module__
+  flet._is_toplevel_ = True
+  return flet
 
 
 def route(*args, **kwds):
   def decorator(f):
-    if not getattr(f, '_is_toplevel_', None):
-      flet = toplevel(f)
-      flet.__module__ = f.__module__
-      f._is_toplevel_ = True
-    else:
-      flet = f
-    _routes.append( (args, kwds, flet) )
-    return flet
+    with _lock:
+      endpoint = '.'.join(funcname(f).split('.')[1:])
+      _routes.append( (args, kwds, endpoint) )
+      if current_app:
+        kwds['endpoint'] = endpoint
+        current_app.add_url_rule(*args, **kwds)
+      return toplevel(f)
   return decorator
 
 
 def context_processor(f):
-  _context_processors.append(f)
+  with _lock:
+    _context_processors.append(f)
   return f
 
 
 def template_filter(name=None):
   def decorator(f):
-    _template_filters[name or f.__name__] = f
+    with _lock:
+      _template_filters[name or f.__name__] = f
     return f
   return decorator
 
 
 def template_func(name=None):
   def decorator(f):
-    _template_funcs[name or f.__name__] = f
+    with _lock:
+      _template_funcs[name or f.__name__] = f
     return f
   return decorator
