@@ -33,6 +33,15 @@ class Request(RequestBase):
   def json(self):
     if self.mimetype == 'application/json':
       return json_module().loads(self.data)
+  
+  @cached_property
+  def user_agent_str(self):
+    return self.environ.get('HTTP_USER_AGENT')
+  
+  @cached_property
+  def is_smartphone(self):
+    ua = (self.user_agent_str or '').lower()
+    return 'iphone' in ua or 'android' in ua
 
 
 class Response(DynamicCharsetResponseMixin, ResponseBase):
