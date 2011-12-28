@@ -75,9 +75,46 @@ class MyTest(GaeTestCase):
     def bar():
       redirect('/foo')
     res = c.get('/')
-    res.data
     assert res.status_code == 302, res.status_code
     assert res.headers['Location'].endswith('/foo'), res.headers
+  
+  def test_abort(self):
+    from raginei.app import abort
+    app, c = self.init_app()
+    @app.route('/')
+    def bar():
+      abort()
+    res = c.get('/')
+    assert res.status_code == 404, res.status_code
+  
+  def test_abort_with_code(self):
+    from raginei.app import abort
+    app, c = self.init_app()
+    @app.route('/')
+    def bar():
+      abort(503)
+    res = c.get('/')
+    assert res.status_code == 503, res.status_code
+  
+  def test_abort_if_true(self):
+    from raginei.app import abort_if
+    app, c = self.init_app()
+    @app.route('/')
+    def bar():
+      abort_if(True)
+    res = c.get('/')
+    assert res.status_code == 404, res.status_code
+  
+  def test_abort_if_false(self):
+    from raginei.app import abort_if
+    app, c = self.init_app()
+    @app.route('/')
+    def bar():
+      abort_if(False)
+      return 'finished'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'finished', res.data
 
 
 if __name__ == '__main__':

@@ -540,6 +540,7 @@ def fetch_json(value, sort_keys=True, **kwds):
 _EXCEPTION_MAP = {
   400: exceptions.BadRequest,
   404: exceptions.NotFound,
+  503: exceptions.ServiceUnavailable,
 }
 
 
