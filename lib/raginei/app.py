@@ -336,13 +336,13 @@ class Application(object):
   def instance(cls, *args, **kwds):
     obj = cls(*args, **kwds)
     # wrap the application
-    if obj.debug:
+    if obj.debug and not obj.test:
       return get_debugged_application_class()(obj, evalex=True)
     return obj
   
   def run(self):
     # wrap the application
-    if self.debug:
+    if self.debug and not self.test:
       if not getattr(self, '_debugged_application', None):
         self._debugged_application = get_debugged_application_class()(
           self, evalex=True)
@@ -396,7 +396,6 @@ class Application(object):
       return val
     return is_debug()
   
-  @cached_property
   def test(self):
     return self.config.get('test')
   
