@@ -23,6 +23,7 @@ from jinja2 import Environment
 
 from werkzeug import exceptions
 from werkzeug.utils import import_string, cached_property
+from werkzeug.urls import Href
 from werkzeug.routing import Map, Rule, RequestRedirect
 from werkzeug.local import Local, LocalManager, LocalProxy
 
@@ -74,7 +75,7 @@ class Application(object):
     self.request_class = self.config.get('request_class') or Request
     self.response_class = self.config.get('response_class') or Response
     self.template_funcs = {}
-    self.template_context_processors = [_default_template_context_processor]
+    self.template_context_processors = [default_template_context_processor]
     self.request_middlewares = []
     self.view_middlewares = []
     self.response_middlewares = []
@@ -237,11 +238,12 @@ class Application(object):
           return response
         raise
     except (RequestRedirect, Found), e:
-      return e.get_response(None)
-    except SystemExit:
+      return e.get_response(request.environ)
+    except SystemExit, e:
+      logging.exception(e)
       raise # Allow sys.exit() to actually exit.
     except Exception, e:
-      if self.debug:
+      if self.debug and not self.test:
         raise
       return self.handle_exception(e)
   
@@ -250,7 +252,7 @@ class Application(object):
     result = view_func(**context)
     if not isinstance(result, self.response_class):
       if isinstance(result, (RequestRedirect, Found)):
-        result = result.get_response(None)
+        result = result.get_response(request.environ)
       elif not isinstance(result, basestring):
         result = result.get_result()
     return self.view_func_result_to_response(result)
@@ -268,8 +270,15 @@ class Application(object):
     return template
   
   def handle_exception(self, e):
-    handler = self.error_handlers.get(getattr(e, 'code', 500))
-    return handler(e) if handler else e
+    code = getattr(e, 'code', 500)
+    if 500 <= code <= 599:
+      logging.exception(e)
+    handler = self.error_handlers.get(code)
+    if handler:
+      return handler(e)
+    if hasattr(e, 'get_response'):
+      return e.get_response(request.environ)
+    return exceptions.InternalServerError()
   
   def init_context(self, environ):
     local.current_app = self
@@ -343,7 +352,7 @@ class Application(object):
     from wsgiref.handlers import CGIHandler
     CGIHandler().run(app_obj)
   
-  def _get_traceback(self, exc_info):
+  def get_traceback(self, exc_info):
     import traceback
     ret = '\n'.join(traceback.format_exception(*(exc_info or sys.exc_info())))
     try:
@@ -382,7 +391,14 @@ class Application(object):
   
   @cached_property
   def debug(self):
+    val = self.config.get('debug')
+    if val is not None:
+      return val
     return is_debug()
+  
+  @cached_property
+  def test(self):
+    return self.config.get('test')
   
   @cached_property
   def project_root(self):
@@ -452,7 +468,7 @@ def soft_unicode(s, encoding='utf-8'):
   return s
 
 
-def _default_template_context_processor(request):
+def default_template_context_processor(request):
   values = dict(
     config=config,
     request=request,
@@ -483,7 +499,11 @@ def make_redirect(endpoint, **values):
   permanent = values.pop('_permanent', False)
   code = 301 if permanent else code
   cls = MovedPermanently if 301 == code else Found
-  return cls(url(endpoint, **values))
+  if endpoint.startswith('/'):
+    url_to = Href(endpoint)(**values)
+  else:
+    url_to = url(endpoint, **values)
+  return cls(url_to)
 
 
 def redirect(endpoint, **values):
