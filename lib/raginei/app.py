@@ -108,6 +108,9 @@ class Application(object):
       func = import_string(name)
       func(self)
   
+  def register_extension_helpers(self):
+    self.register_extension('raginei.helpers.register')
+  
   def register_extension_session(self):
     self.register_extension(self.config.get(
       'extension_session', 'raginei.ext.session.register'))
@@ -117,6 +120,7 @@ class Application(object):
       'extension_csrf', 'raginei.ext.csrf.register'))
   
   def register_extensions(self, funcs):
+    self.register_extension_helpers()
     self.register_extension_session()
     self.register_extension_csrf()
     if funcs:
