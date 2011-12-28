@@ -2,10 +2,6 @@
 
 import unittest
 from base import GaeTestCase
-
-import hashlib
-import datetime
-
 from werkzeug.test import Client
 
 
@@ -115,6 +111,22 @@ class MyTest(GaeTestCase):
     res = c.get('/')
     assert res.status_code == 200, res.status_code
     assert res.data == 'finished', res.data
+  
+  def test_abort_url_for(self):
+    from raginei.app import url
+    app, c = self.init_app()
+    @app.route('/')
+    def bar():
+      return url('bar')
+    @app.route('/piyo')
+    def piyo():
+      return url('piyo')
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == '/', res.data
+    res = c.get('/piyo')
+    assert res.status_code == 200, res.status_code
+    assert res.data == '/piyo', res.data
 
 
 if __name__ == '__main__':
