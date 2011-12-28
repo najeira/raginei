@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+raginei.taskutil
+================
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
+"""
 
 import time
 import uuid

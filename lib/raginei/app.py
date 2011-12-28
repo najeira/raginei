@@ -3,7 +3,7 @@
 raginei.app
 ===========
 
-:copyright: (c) 2011 by najeira <najeira@gmail.com>, All rights reserved.
+:copyright: 2011 by najeira <najeira@gmail.com>.
 :license: Apache License 2.0, see LICENSE for more details.
 """
 
@@ -28,7 +28,7 @@ from werkzeug.routing import Map, Rule, RequestRedirect
 from werkzeug.local import Local, LocalManager, LocalProxy
 
 from .wrappers import Request, Response, Found, MovedPermanently
-from .util import funcname
+from .util import funcname, json_module
 
 local = Local()
 local_manager = LocalManager([local])
@@ -526,14 +526,7 @@ def render_blank_image():
 
 
 def fetch_json(value, sort_keys=True, **kwds):
-  try:
-    import json
-  except ImportError:
-    try:
-      import simplejson as json
-    except ImportError:
-      from django.utils import simplejson as json
-  return json.dumps(value, sort_keys=sort_keys, **kwds)
+  return json_module().dumps(value, sort_keys=sort_keys, **kwds)
 
 
 _EXCEPTION_MAP = {

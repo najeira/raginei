@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+raginei.wrappers
+================
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
+"""
 
 from werkzeug.wrappers import Request as RequestBase, Response as ResponseBase
 from werkzeug.utils import cached_property, redirect

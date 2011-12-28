@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
-
 """
+raginei.jinja2compiler
+======================
+
 from gaefy.jinja2.compiler
 :copyright: 2009 by tipfy.org.
 :license: BSD, see LICENSE.txt for more details.
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
 """
 
 import os
@@ -157,7 +162,7 @@ def main():
   dest_dir = os.path.join(root_dir,
     options.get('dest') or '%s_compiled' % options['src'])
   
-  from raginei.path import setup_gae_path
+  from raginei.util import setup_gae_path
   
   setup_gae_path(gae_home=options['gae'])
   

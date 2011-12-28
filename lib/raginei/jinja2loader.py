@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+raginei.jinja2loader
+====================
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
+"""
 
 import re
 from jinja2 import FileSystemLoader as FileSystemLoaderBase, BaseLoader, TemplateNotFound
