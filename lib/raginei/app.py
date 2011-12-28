@@ -132,8 +132,9 @@ class Application(object):
   
   def init_routes(self):
     with _lock:
-      for args, kwds, endpoint in _routes:
+      for args, kwds, endpoint, func in _routes:
         kwds['endpoint'] = endpoint
+        kwds['view_func'] = func
         self.add_url_rule(*args, **kwds)
   
   def init_templates(self):
@@ -145,14 +146,14 @@ class Application(object):
       for name, f in _template_funcs.iteritems():
         self.template_func(name)(f)
   
-  def add_url_rule(self, rule, endpoint, **options):
+  def add_url_rule(self, rule, endpoint, view_func, **options):
     if not rule.startswith('/'):
       rule = '/' + rule
     options.setdefault('methods', ('GET', 'POST', 'OPTIONS'))
     options['endpoint'] = endpoint
     with _lock:
       self.url_map.add(Rule(rule, **options))
-      self.view_functions[endpoint] = endpoint
+      self.view_functions[endpoint] = (endpoint, view_func)
   
   def make_response(self, *args, **kwds):
     if 1 == len(args) and not isinstance(args[0], basestring):
@@ -200,9 +201,18 @@ class Application(object):
   def load_view_func(self, endpoint, view_func):
     with _lock:
       if isinstance(view_func, tuple):
-        view_classname, args, kwargs = view_func
-        view_cls = import_string('views.' + view_classname)
-        view_func = view_cls(*args, **kwargs)
+        if 2 == len(view_func):
+          view_funcname, func = view_func
+          try:
+            view_func = import_string('views.' + view_funcname)
+          except ImportError:
+            view_func = func
+        elif 3 == len(view_func):
+          view_classname, args, kwargs = view_func
+          view_cls = import_string('views.' + view_classname)
+          view_func = view_cls(*args, **kwargs)
+        else:
+          raise NotImplementedError()
       elif isinstance(view_func, basestring):
         view_func = import_string('views.' + view_func)
       else:
@@ -593,12 +603,14 @@ def toplevel(func):
 def route(*args, **kwds):
   def decorator(f):
     with _lock:
+      flet = toplevel(f)
       endpoint = '.'.join(funcname(f).split('.')[1:])
-      _routes.append( (args, kwds, endpoint) )
+      _routes.append( (args, kwds, endpoint, flet) )
       if current_app:
         kwds['endpoint'] = endpoint
+        kwds['view_func'] = flet
         current_app.add_url_rule(*args, **kwds)
-      return toplevel(f)
+      return flet
   return decorator
 
 
