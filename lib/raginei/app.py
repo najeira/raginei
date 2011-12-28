@@ -39,10 +39,6 @@ url_adapter = local('url_adapter')
 config = LocalProxy(lambda: current_app.config)
 
 _lock = threading.RLock()
-_routes = []
-_context_processors = []
-_template_filters = {}
-_template_funcs = {}
 
 
 def is_debug():
@@ -90,8 +86,6 @@ class Application(object):
     self.logging_internal = self.config.get('logging_internal') or False
     self.register_extensions(self.config.get('register_extensions'))
     self.load_modules(self.config.get('load_modules'))
-    self.init_routes()
-    self.init_templates()
   
   def load_config(self, config, **kwds):
     if not config:
@@ -101,7 +95,7 @@ class Application(object):
         config = import_string(config)
       config = dict([(key, getattr(config, key)) for key in dir(config) if not key.startswith('_')])
     if kwds:
-      config.update(kwds)
+      config.update(dict([(key, val) for key, val in kwds.iteritems() if not key.startswith('_')]))
     return config
   
   def load_modules(self, modules):
@@ -130,21 +124,15 @@ class Application(object):
         func = import_string(name)
         func(self)
   
-  def init_routes(self):
-    with _lock:
-      for args, kwds, endpoint, func in _routes:
-        kwds['endpoint'] = endpoint
-        kwds['view_func'] = func
+  def route(self, *args, **kwds):
+    def decorator(f):
+      flet = toplevel(f)
+      kwds['endpoint'] = '.'.join(funcname(f).split('.')[1:])
+      kwds['view_func'] = flet
+      with _lock:
         self.add_url_rule(*args, **kwds)
-  
-  def init_templates(self):
-    with _lock:
-      for f in _context_processors:
-        self.context_processor(f)
-      for name, f in _template_filters.iteritems():
-        self.template_filter(name)(f)
-      for name, f in _template_funcs.iteritems():
-        self.template_func(name)(f)
+      return flet
+    return decorator
   
   def add_url_rule(self, rule, endpoint, view_func, **options):
     if not rule.startswith('/'):
@@ -414,6 +402,8 @@ class Application(object):
     return f
   
   def template_filter(self, name=None):
+    if name and not isinstance(name, basestring):
+      return self.template_filter()(name)
     def decorator(f):
       with _lock:
         self.jinja2_env.filters[name or f.__name__] = f
@@ -421,6 +411,8 @@ class Application(object):
     return decorator
   
   def template_func(self, name=None):
+    if name and not isinstance(name, basestring):
+      return self.template_func()(name)
     def decorator(f):
       with _lock:
         self.template_funcs[name or f.__name__] = f
@@ -562,6 +554,9 @@ def get_template_path(template):
 
 def get_debugged_application_class():
   from werkzeug.debug import DebuggedApplication
+  def attr_get(obj, name):
+    return getattr(obj.app, name)
+  DebuggedApplication.__getattr__ = attr_get
   return DebuggedApplication
 
 
@@ -598,39 +593,3 @@ def toplevel(func):
   flet.__module__ = func.__module__
   flet._is_toplevel_ = True
   return flet
-
-
-def route(*args, **kwds):
-  def decorator(f):
-    with _lock:
-      flet = toplevel(f)
-      endpoint = '.'.join(funcname(f).split('.')[1:])
-      _routes.append( (args, kwds, endpoint, flet) )
-      if current_app:
-        kwds['endpoint'] = endpoint
-        kwds['view_func'] = flet
-        current_app.add_url_rule(*args, **kwds)
-      return flet
-  return decorator
-
-
-def context_processor(f):
-  with _lock:
-    _context_processors.append(f)
-  return f
-
-
-def template_filter(name=None):
-  def decorator(f):
-    with _lock:
-      _template_filters[name or f.__name__] = f
-    return f
-  return decorator
-
-
-def template_func(name=None):
-  def decorator(f):
-    with _lock:
-      _template_funcs[name or f.__name__] = f
-    return f
-  return decorator

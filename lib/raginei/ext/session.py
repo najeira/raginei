@@ -4,6 +4,7 @@ import datetime
 from werkzeug.contrib.securecookie import SecureCookie
 from raginei.app import current_app, request, session, local
 
+
 def register(server):
   
   @server.request_middleware
