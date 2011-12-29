@@ -317,10 +317,8 @@ def link_options(env, **kwds):
     if isinstance(p, list):
       if 2 <= len(p):
         return "var w=window.open(%s,'%s','%s');w.focus();" % (u, p[0], p[1])
-      else:
-        return "var w=window.open(%s,'%s');w.focus();" % (u, p[0])
-    else:
-      return "var w=window.open(%s);w.focus();" % (u,)
+      return "var w=window.open(%s,'%s');w.focus();" % (u, p[0])
+    return "var w=window.open(%s);w.focus();" % (u,)
   
   def _post_js():
     from raginei.ext.csrf import csrf_token

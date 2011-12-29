@@ -33,8 +33,24 @@ class Request(RequestBase):
     return 'post' == self.method.lower()
   
   @cached_property
-  def is_taskqueue(self):
+  def task_name(self):
     return self.headers.get('X-AppEngine-TaskName')
+  
+  @cached_property
+  def task_retry_count(self):
+    return self.headers.get('X-AppEngine-TaskRetryCount')
+  
+  @cached_property
+  def queue_name(self):
+    return self.headers.get('X-AppEngine-QueueName')
+  
+  @cached_property
+  def country(self):
+    return self.headers.get('X-AppEngine-Country')
+  
+  @cached_property
+  def is_taskqueue(self):
+    return bool(self.task_name)
   
   @cached_property
   def json(self):
