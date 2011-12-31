@@ -179,7 +179,7 @@ class Application(object):
   def process_view(self, view_func):
     if self.view_middlewares:
       for mw in self.view_middlewares:
-        response = mw(request, view_func, **(request.view_args))
+        response = mw(request, view_func, **request.view_args)
         if response:
           return response
   
@@ -324,6 +324,7 @@ class Application(object):
         ret = self.dispatch_request()
       response = self.make_response(ret)
       response = self.process_response(response)
+      response = self.make_response(response)
       self.override_response(response)
       return response(environ, start_response)
     finally:
@@ -446,6 +447,11 @@ class Application(object):
   def response_middleware(self, f):
     with _lock:
       self.response_middlewares.insert(0, f)
+    return f
+  
+  def routing_middleware(self, f):
+    with _lock:
+      self.routing_middlewares.append(f)
     return f
 
 

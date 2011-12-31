@@ -60,10 +60,41 @@ class MyTest(GaeTestCase):
     @app.request_middleware
     def middleware(req):
       assert req
-      return 'from middleware'
+      return 'request_middleware'
     res = c.get('/')
     assert res.status_code == 200, res.status_code
-    assert res.data == 'from middleware', res.data
+    assert res.data == 'request_middleware', res.data
+
+  def test_response_middleware(self):
+    app, c = self.init_app()
+    @app.route('/')
+    def foo():
+      return 'foo'
+    @app.response_middleware
+    def middleware(res):
+      assert res
+      assert res.status_code == 200, res.status_code
+      assert res.data == 'foo', res.data
+      return 'response_middleware'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'response_middleware', res.data
+
+  def test_routing_middleware(self):
+    app, c = self.init_app()
+    @app.route('/')
+    def foo():
+      return 'foo'
+    @app.route('/bar')
+    def bar():
+      return 'bar'
+    @app.routing_middleware
+    def middleware(request, endpoint):
+      assert endpoint == 'foo', endpoint
+      return 'bar'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'bar', res.data
   
   def test_multi_route(self):
     app, c = self.init_app()
