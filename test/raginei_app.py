@@ -13,10 +13,10 @@ class MyTest(GaeTestCase):
   def tearDown(self):
     super(MyTest, self).tearDown()
   
-  def init_app(self):
+  def init_app(self, **kwds):
     from raginei.app import Application
     from raginei.wrappers import Response
-    app = Application.instance(test=True)
+    app = Application.instance(test=True, **kwds)
     c = Client(app, Response)
     return app, c
   
@@ -43,6 +43,27 @@ class MyTest(GaeTestCase):
     app = Application(_starts_with_unserscore=msg)
     val = app.config.get('_starts_with_unserscore')
     assert not val, val
+
+  def test_make_response(self):
+    app, c = self.init_app(url_strict_slashes=True)
+    res = app.make_response('aaa')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'aaa', res.data
+    assert res.content_type.startswith('text/html'), res.content_type
+    res = app.make_response('bbb', content_type='text/plain')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'bbb', res.data
+    assert res.content_type == 'text/plain', res.content_type
+
+  def test_request_middleware(self):
+    app, c = self.init_app()
+    @app.request_middleware
+    def middleware(req):
+      assert req
+      return 'from middleware'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'from middleware', res.data
   
   def test_multi_route(self):
     app, c = self.init_app()
