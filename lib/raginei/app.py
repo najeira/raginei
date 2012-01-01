@@ -409,7 +409,7 @@ class Application(object):
   
   @cached_property
   def static_dir(self):
-    path = config.get('static_dir') or '/static/'
+    path = self.config.get('static_dir') or '/static/'
     if not path.startswith('/'):
       path = '/' + path
     if not path.endswith('/'):
@@ -452,6 +452,16 @@ class Application(object):
   def routing_middleware(self, f):
     with _lock:
       self.routing_middlewares.append(f)
+    return f
+  
+  def view_middleware(self, f):
+    with _lock:
+      self.view_middlewares.append(f)
+    return f
+  
+  def exception_middleware(self, f):
+    with _lock:
+      self.exception_middlewares.append(f)
     return f
 
 

@@ -79,7 +79,7 @@ class MyTest(GaeTestCase):
     res = c.get('/')
     assert res.status_code == 200, res.status_code
     assert res.data == 'response_middleware', res.data
-
+  
   def test_routing_middleware(self):
     app, c = self.init_app()
     @app.route('/')
@@ -95,6 +95,36 @@ class MyTest(GaeTestCase):
     res = c.get('/')
     assert res.status_code == 200, res.status_code
     assert res.data == 'bar', res.data
+  
+  def test_view_middleware(self):
+    app, c = self.init_app()
+    @app.route('/')
+    def foo():
+      return 'foo'
+    @app.view_middleware
+    def middleware(request, view_func):
+      assert request
+      assert view_func
+      assert view_func.__name__ == 'foo'
+      return 'view_middleware'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'view_middleware', res.data
+  
+  def test_exception_middleware(self):
+    app, c = self.init_app()
+    @app.route('/')
+    def foo():
+      raise ValueError('foo')
+    @app.exception_middleware
+    def middleware(request, e):
+      assert request
+      assert e
+      assert e.args[0] == 'foo'
+      return 'exception_middleware'
+    res = c.get('/')
+    assert res.status_code == 200, res.status_code
+    assert res.data == 'exception_middleware', res.data
   
   def test_multi_route(self):
     app, c = self.init_app()
@@ -179,6 +209,22 @@ class MyTest(GaeTestCase):
     res = c.get('/piyo')
     assert res.status_code == 200, res.status_code
     assert res.data == '/piyo', res.data
+  
+  def test_project_root(self):
+    import sys, os
+    app, c = self.init_app()
+    assert app.project_root == os.path.dirname(
+      os.path.dirname(os.path.abspath(__file__))), app.project_root
+  
+  def test_static_dir(self):
+    app, c = self.init_app()
+    assert app.static_dir == '/static/', app.static_dir
+    app, c = self.init_app(static_dir='hoge')
+    assert app.static_dir == '/hoge/', app.static_dir
+    app, c = self.init_app(static_dir='/fuga')
+    assert app.static_dir == '/fuga/', app.static_dir
+    app, c = self.init_app(static_dir='/piyo')
+    assert app.static_dir == '/piyo/', app.static_dir
 
 
 if __name__ == '__main__':
