@@ -36,6 +36,7 @@ def get_base(gae_home):
       """
       from http://code.google.com/p/appengine-py-testhelper/source/browse/trunk/gae_test_base.py
       """
+      os.environ['HTTP_HOST'] = 'example.com'
       unittest.TestCase.__init__(self, *args, **kwargs)
       if hasattr(self, 'setUp'):
         self.test_setup = self.setUp
