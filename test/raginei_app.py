@@ -21,9 +21,10 @@ class MyTest(GaeTestCase):
     return app, c
   
   def test_hello_world(self):
+    from raginei.app import route
     app, c = self.init_app()
     msg = 'Hello World!'
-    @app.route('/')
+    @route('/')
     def hello_world():
       return msg
     res = c.get('/')
@@ -66,8 +67,9 @@ class MyTest(GaeTestCase):
     assert res.data == 'request_middleware', res.data
 
   def test_response_middleware(self):
+    from raginei.app import route
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def foo():
       return 'foo'
     @app.response_middleware
@@ -81,11 +83,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'response_middleware', res.data
   
   def test_routing_middleware(self):
+    from raginei.app import route
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def foo():
       return 'foo'
-    @app.route('/bar')
+    @route('/bar')
     def bar():
       return 'bar'
     @app.routing_middleware
@@ -97,8 +100,9 @@ class MyTest(GaeTestCase):
     assert res.data == 'bar', res.data
   
   def test_view_middleware(self):
+    from raginei.app import route
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def foo():
       return 'foo'
     @app.view_middleware
@@ -112,8 +116,9 @@ class MyTest(GaeTestCase):
     assert res.data == 'view_middleware', res.data
   
   def test_exception_middleware(self):
+    from raginei.app import route
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def foo():
       raise ValueError('foo')
     @app.exception_middleware
@@ -127,11 +132,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'exception_middleware', res.data
   
   def test_multi_route(self):
+    from raginei.app import route
     app, c = self.init_app()
-    @app.route('/foo')
+    @route('/foo')
     def foo():
       return 'foo'
-    @app.route('/bar')
+    @route('/bar')
     def bar():
       return 'bar'
     res = c.get('/foo')
@@ -147,9 +153,9 @@ class MyTest(GaeTestCase):
     assert res.status_code == 404, res.status_code
   
   def test_redirect(self):
-    from raginei.app import redirect
+    from raginei.app import route, redirect
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       redirect('/foo')
     res = c.get('/')
@@ -157,36 +163,36 @@ class MyTest(GaeTestCase):
     assert res.headers['Location'].endswith('/foo'), res.headers
   
   def test_abort(self):
-    from raginei.app import abort
+    from raginei.app import route, abort
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       abort()
     res = c.get('/')
     assert res.status_code == 404, res.status_code
   
   def test_abort_with_code(self):
-    from raginei.app import abort
+    from raginei.app import route, abort
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       abort(503)
     res = c.get('/')
     assert res.status_code == 503, res.status_code
   
   def test_abort_if_true(self):
-    from raginei.app import abort_if
+    from raginei.app import route, abort_if
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       abort_if(True)
     res = c.get('/')
     assert res.status_code == 404, res.status_code
   
   def test_abort_if_false(self):
-    from raginei.app import abort_if
+    from raginei.app import route, abort_if
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       abort_if(False)
       return 'finished'
@@ -195,12 +201,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'finished', res.data
   
   def test_abort_url_for(self):
-    from raginei.app import url
+    from raginei.app import route, url
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def bar():
       return url('bar')
-    @app.route('/piyo')
+    @route('/piyo')
     def piyo():
       return url('piyo')
     res = c.get('/')

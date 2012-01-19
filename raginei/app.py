@@ -40,6 +40,7 @@ url_adapter = local('url_adapter')
 config = LocalProxy(lambda: current_app.config)
 
 _lock = threading.RLock()
+_routes = {}
 
 
 def is_debug():
@@ -87,6 +88,7 @@ class Application(object):
     self.logging_internal = self.config.get('logging_internal') or False
     self.register_extensions(self.config.get('register_extensions'))
     self.load_modules(self.config.get('load_modules'))
+    self.is_first_request = True
   
   def load_config(self, config, **kwds):
     if not config:
@@ -129,24 +131,22 @@ class Application(object):
         func = import_string(name)
         func(self)
   
-  def route(self, *args, **kwds):
-    def decorator(f):
-      flet = toplevel(f)
-      kwds['endpoint'] = '.'.join(funcname(f).split('.')[1:])
-      kwds['view_func'] = flet
-      with _lock:
-        self.add_url_rule(*args, **kwds)
-      return flet
-    return decorator
+  def init_routes(self):
+    with _lock:
+      for endpoint, value in _routes.iteritems():
+        self.add_url_rule(value[0], endpoint=endpoint, **value[1])
   
-  def add_url_rule(self, rule, endpoint, view_func, **options):
-    if not rule.startswith('/'):
-      rule = '/' + rule
+  def add_url_rule(self, rules, endpoint, view_func, **options):
     options.setdefault('methods', ('GET', 'POST', 'OPTIONS'))
     options['endpoint'] = endpoint
+    if isinstance(rules, basestring):
+      rules = [rules]
     with _lock:
-      self.url_map.add(Rule(rule, **options))
-      self.view_functions[endpoint] = (endpoint, view_func)
+      for rule in rules:
+        if not rule.startswith('/'):
+          rule = '/' + rule
+        self.url_map.add(Rule(rule, **options))
+      self.view_functions[endpoint] = view_func
   
   def make_response(self, *args, **kwds):
     if 1 == len(args) and not isinstance(args[0], basestring):
@@ -194,13 +194,7 @@ class Application(object):
   def load_view_func(self, endpoint, view_func):
     with _lock:
       if isinstance(view_func, tuple):
-        if 2 == len(view_func):
-          view_funcname, func = view_func
-          try:
-            view_func = import_string('views.' + view_funcname)
-          except ImportError:
-            view_func = func
-        elif 3 == len(view_func):
+        if 3 == len(view_func):
           view_classname, args, kwargs = view_func
           view_cls = import_string('views.' + view_classname)
           view_func = view_cls(*args, **kwargs)
@@ -317,6 +311,11 @@ class Application(object):
         del local.override_cookies
   
   def do_run(self, environ, start_response):
+    if self.is_first_request:
+      with _lock:
+        if self.is_first_request:
+          self.init_routes()
+        self.is_first_request = False
     self.init_context(environ)
     try:
       ret = self.process_request()
@@ -465,22 +464,34 @@ class Application(object):
     return f
 
 
-def soft_unicode(s, encoding='utf-8'):
+def to_unicode(s, encoding='utf-8', errors='strict'):
   if isinstance(s, unicode):
     return s
   elif isinstance(s, basestring):
-    return s.decode(encoding)
+    return s.decode(encoding, errors)
   elif isinstance(s, list):
     for i, v in enumerate(s):
-      s[i] = soft_unicode(v)
+      s[i] = to_unicode(v, encoding, errors)
     return s
   elif isinstance(s, tuple):
-    return tuple([soft_unicode(_) for _ in s])
+    return tuple([to_unicode(_, encoding, errors) for _ in s])
   elif isinstance(s, dict):
     for k in s.iterkeys():
-      s[k] = soft_unicode(s[k])
+      s[k] = to_unicode(s[k], encoding, errors)
     return s
   return s
+
+
+def route(rules, **kwds):
+  def decorator(f):
+    flet = toplevel(f)
+    endpoint = '.'.join(funcname(f).split('.')[1:])
+    kwds['view_func'] = flet
+    with _lock:
+      assert endpoint not in _routes, endpoint
+      _routes[endpoint] = (rules, kwds)
+    return flet
+  return decorator
 
 
 def default_template_context_processor(request):
@@ -501,7 +512,7 @@ def fetch(template, **values):
       values.update(ret)
   values['url'] = url
   return current_app.jinja2_env.get_template(
-    get_template_path(template)).render(soft_unicode(values))
+    get_template_path(template)).render(to_unicode(values))
 
 
 def render(template, **values):

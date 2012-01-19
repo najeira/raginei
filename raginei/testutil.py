@@ -72,6 +72,9 @@ def get_base(gae_home):
       datastore_stub = self.testbed.get_stub(testbed.DATASTORE_SERVICE_NAME)
       datastore_stub.SetConsistencyPolicy(
         datastore_stub_util.TimeBasedHRConsistencyPolicy())
+      
+      from .app import _routes
+      _routes.clear()
     
     def _env_tearDown(self):
       self.testbed.deactivate()
