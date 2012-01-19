@@ -22,10 +22,10 @@ class MyTest(GaeTestCase):
     return app, c
   
   def test_fetch(self):
-    from raginei.app import fetch, render
+    from raginei.app import route, fetch, render
     app, c = self.init_app()
     msg = 'Hello World!'
-    @app.route('/')
+    @route('/')
     def hello_world():
       ret = fetch('test_fetch', msg=msg)
       assert isinstance(ret, basestring)
@@ -35,10 +35,10 @@ class MyTest(GaeTestCase):
     assert res.data == msg, res.data
   
   def test_render(self):
-    from raginei.app import fetch, render
+    from raginei.app import route, fetch, render
     app, c = self.init_app()
     msg = 'Hello World!'
-    @app.route('/')
+    @route('/')
     def hello_world():
       ret = render('test_fetch', msg=msg)
       assert not isinstance(ret, basestring)
@@ -48,10 +48,10 @@ class MyTest(GaeTestCase):
     assert res.data == msg, res.data
   
   def test_helper_date(self):
-    from raginei.app import fetch, render
+    from raginei.app import route, fetch, render
     now = datetime.datetime.utcnow()
     app, c = self.init_app()
-    @app.route('/')
+    @route('/')
     def hello_world():
       return render('test_helper_date', now=now)
     res = c.get('/')

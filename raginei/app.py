@@ -99,11 +99,6 @@ class Application(object):
       for name in modules:
         import_string(name)
   
-  def register_extension(self, name):
-    if name:
-      func = import_string(name)
-      func(self)
-  
   def register_extensions(self, funcs):
     import_string('raginei.helpers')
     import_string('raginei.ext.session')
@@ -450,11 +445,12 @@ def template_func(name=None):
 
 
 def _get_template_decorator(store, name):
+  if name and not isinstance(name, basestring):
+    store(name.__name__, name)
+    return name
   def decorator(f):
     store(name or f.__name__, f)
     return f
-  if name and not isinstance(name, basestring):
-    return decorator(name)
   return decorator
 
 
