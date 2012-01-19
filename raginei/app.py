@@ -79,8 +79,6 @@ class Application(object):
     self.jinja2_extensions = self.config.get('jinja2_extensions') or []
     self.jinja2_environment_kwargs = self.config.get('jinja2_environment_kwargs') or {}
     self.logging_internal = self.config.get('logging_internal') or False
-    self.register_extensions(self.config.get('register_extensions'))
-    self.load_modules(self.config.get('load_modules'))
     self.is_first_request = True
   
   def load_config(self, config, **kwds):
@@ -93,20 +91,6 @@ class Application(object):
     if kwds:
       config.update(dict([(key, val) for key, val in kwds.iteritems() if not key.startswith('_')]))
     return config
-  
-  def load_modules(self, modules):
-    if modules:
-      for name in modules:
-        import_string(name)
-  
-  def register_extensions(self, funcs):
-    import_string('raginei.helpers')
-    import_string('raginei.ext.session')
-    import_string('raginei.ext.csrf')
-    if funcs:
-      for name in funcs:
-        func = import_string(name)
-        func(self)
   
   def init_routes(self):
     for endpoint, value in Context.get_routes().iteritems():

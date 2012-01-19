@@ -145,3 +145,7 @@ class Context(object):
     return ret
 
 toplevel_context = Context.push()
+
+import helpers
+import ext.session
+import ext.csrf
