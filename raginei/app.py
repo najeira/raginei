@@ -29,6 +29,7 @@ from werkzeug.local import Local, LocalManager, LocalProxy
 
 from .wrappers import Request, Response, Found, MovedPermanently
 from .util import funcname, json_module
+from .ctx import Context
 
 local = Local()
 local_manager = LocalManager([local])
@@ -40,10 +41,6 @@ url_adapter = local('url_adapter')
 config = LocalProxy(lambda: current_app.config)
 
 _lock = threading.RLock()
-_routes = {}
-_template_funcs = {}
-_template_filters = {}
-_template_context_processors = {}
 
 
 def is_debug():
@@ -78,11 +75,6 @@ class Application(object):
     self.url_map.strict_slashes = self.config.get('url_strict_slashes', False)
     self.request_class = self.config.get('request_class') or Request
     self.response_class = self.config.get('response_class') or Response
-    self.request_middlewares = []
-    self.view_middlewares = []
-    self.response_middlewares = []
-    self.exception_middlewares = []
-    self.routing_middlewares = []
     self.error_handlers = {}
     self.jinja2_extensions = self.config.get('jinja2_extensions') or []
     self.jinja2_environment_kwargs = self.config.get('jinja2_environment_kwargs') or {}
@@ -112,21 +104,10 @@ class Application(object):
       func = import_string(name)
       func(self)
   
-  def register_extension_helpers(self):
-    import_string('raginei.helpers')
-  
-  def register_extension_session(self):
-    self.register_extension(self.config.get(
-      'extension_session', 'raginei.ext.session.register'))
-  
-  def register_extension_csrf(self):
-    self.register_extension(self.config.get(
-      'extension_csrf', 'raginei.ext.csrf.register'))
-  
   def register_extensions(self, funcs):
-    self.register_extension_helpers()
-    self.register_extension_session()
-    self.register_extension_csrf()
+    import_string('raginei.helpers')
+    import_string('raginei.ext.session')
+    import_string('raginei.ext.csrf')
     if funcs:
       for name in funcs:
         func = import_string(name)
@@ -134,7 +115,7 @@ class Application(object):
   
   def init_routes(self):
     with _lock:
-      for endpoint, value in _routes.iteritems():
+      for endpoint, value in Context.get_routes().iteritems():
         self.add_url_rule(value[0], endpoint=endpoint, **value[1])
   
   def add_url_rule(self, rules, endpoint, view_func, **options):
@@ -142,12 +123,11 @@ class Application(object):
     options['endpoint'] = endpoint
     if isinstance(rules, basestring):
       rules = [rules]
-    with _lock:
-      for rule in rules:
-        if not rule.startswith('/'):
-          rule = '/' + rule
-        self.url_map.add(Rule(rule, **options))
-      self.view_functions[endpoint] = view_func
+    for rule in rules:
+      if not rule.startswith('/'):
+        rule = '/' + rule
+      self.url_map.add(Rule(rule, **options))
+    self.view_functions[endpoint] = view_func
   
   def make_response(self, *args, **kwds):
     if 1 == len(args) and not isinstance(args[0], basestring):
@@ -156,44 +136,55 @@ class Application(object):
   
   @measure_time
   def process_request(self):
-    if self.request_middlewares:
-      for mw in self.request_middlewares:
+    mws = Context.get_request_middlewares()
+    if mws:
+      for mw in mws:
         response = mw(request)
         if response:
           return response
   
   @measure_time
   def process_response(self, response):
-    if self.response_middlewares:
-      for mw in self.response_middlewares:
+    mws = Context.get_response_middlewares()
+    if mws:
+      for mw in mws:
         response = mw(response) or response
     return response
   
   @measure_time
   def process_routing(self, endpoint):
-    if self.routing_middlewares:
-      for mw in self.routing_middlewares:
+    mws = Context.get_routing_middlewares()
+    if mws:
+      for mw in mws:
         endpoint = mw(request, endpoint) or endpoint
     return endpoint
   
   @measure_time
   def process_view(self, view_func):
-    if self.view_middlewares:
-      for mw in self.view_middlewares:
+    mws = Context.get_view_middlewares()
+    if mws:
+      for mw in mws:
         response = mw(request, view_func, **request.view_args)
         if response:
           return response
   
   @measure_time
   def process_exception(self, e):
-    if self.exception_middlewares:
-      for mw in self.exception_middlewares:
+    mws = Context.get_exception_middlewares()
+    if mws:
+      for mw in mws:
         response = mw(request, e)
         if response:
           return response
   
-  def load_view_func(self, endpoint, view_func):
+  def load_view_func(self, endpoint):
+    view_func = self.view_functions[endpoint]
+    if not isinstance(view_func, (tuple, basestring)):
+      return view_func
     with _lock:
+      view_func = self.view_functions[endpoint]
+      if not isinstance(view_func, (tuple, basestring)):
+        return view_func
       if isinstance(view_func, tuple):
         if 3 == len(view_func):
           view_classname, args, kwargs = view_func
@@ -211,9 +202,7 @@ class Application(object):
   
   def get_view_func(self, endpoint):
     local.endpoint = endpoint = self.process_routing(endpoint)
-    view_func = self.view_functions[endpoint]
-    if isinstance(view_func, (tuple, basestring)):
-      view_func = self.load_view_func(endpoint, view_func)
+    view_func = self.load_view_func(endpoint)
     assert callable(view_func)
     return view_func
   
@@ -226,7 +215,7 @@ class Application(object):
       if response:
         return response
       try:
-        return self.process_view_func(view_func, request.view_args)
+        return self.call_view_func(view_func, request.view_args)
       except Exception, e:
         response = self.process_exception(e)
         if response:
@@ -243,7 +232,7 @@ class Application(object):
       return self.handle_exception(e)
   
   @measure_time
-  def process_view_func(self, view_func, context):
+  def call_view_func(self, view_func, context):
     result = view_func(**context)
     if not isinstance(result, self.response_class):
       if isinstance(result, (RequestRedirect, Found)):
@@ -311,13 +300,16 @@ class Application(object):
           response.set_cookie(d.pop('key'), **d)
         del local.override_cookies
   
-  def do_run(self, environ, start_response):
+  def init_on_first_request(self):
     if self.is_first_request:
       with _lock:
         if self.is_first_request:
           self.init_routes()
           self.init_template_filters()
         self.is_first_request = False
+  
+  def do_run(self, environ, start_response):
+    self.init_on_first_request()
     self.init_context(environ)
     try:
       ret = self.process_request()
@@ -419,33 +411,8 @@ class Application(object):
   
   def init_template_filters(self):
     with _lock:
-      for name, f in _template_filters.iteritems():
+      for name, f in Context.get_template_filters().iteritems():
         self.jinja2_env.filters[name] = f
-
-  def request_middleware(self, f):
-    with _lock:
-      self.request_middlewares.append(f)
-    return f
-  
-  def response_middleware(self, f):
-    with _lock:
-      self.response_middlewares.insert(0, f)
-    return f
-  
-  def routing_middleware(self, f):
-    with _lock:
-      self.routing_middlewares.append(f)
-    return f
-  
-  def view_middleware(self, f):
-    with _lock:
-      self.view_middlewares.append(f)
-    return f
-  
-  def exception_middleware(self, f):
-    with _lock:
-      self.exception_middlewares.append(f)
-    return f
 
 
 def to_unicode(s, encoding='utf-8', errors='strict'):
@@ -472,27 +439,26 @@ def route(rules, **kwds):
     endpoint = '.'.join(funcname(f).split('.')[1:])
     kwds['view_func'] = flet
     with _lock:
-      assert endpoint not in _routes, endpoint
-      _routes[endpoint] = (rules, kwds)
+      Context.add_route(endpoint, (rules, kwds))
     return flet
   return decorator
 
 
 def template_filter(name=None):
-  return _get_template_decorator(template_filter, _template_filters, name)
+  return _get_template_decorator(Context.add_template_filter, name)
 
 
 def template_func(name=None):
-  return _get_template_decorator(template_func, _template_funcs, name)
+  return _get_template_decorator(Context.add_template_func, name)
 
 
-def _get_template_decorator(func, store, name):
-  if name and not isinstance(name, basestring):
-    return func()(name)
+def _get_template_decorator(store, name):
   def decorator(f):
     with _lock:
-      store[name or f.__name__] = f
+      store(name or f.__name__, f)
     return f
+  if name and not isinstance(name, basestring):
+    return decorator(name)
   return decorator
 
 
@@ -502,19 +468,46 @@ def default_template_context_processor(request):
     request=request,
     session=session,
   )
-  values.update(_template_funcs)
+  values.update(Context.get_template_funcs())
   return values
 
 
 def context_processor(f):
-  with _lock:
-    _template_context_processors.append(f)
+  Context.add_template_context_processor(f)
+  return f
+
+
+def request_middleware(f):
+  Context.add_request_middleware(f)
+  return f
+
+
+def response_middleware(f):
+  Context.add_response_middleware(f)
+  return f
+
+
+def routing_middleware(f):
+  Context.add_routing_middleware(f)
+  return f
+
+
+def view_middleware(f):
+  Context.add_view_middleware(f)
+  return f
+
+
+def exception_middleware(f):
+  Context.add_exception_middleware(f)
   return f
 
 
 @measure_time
 def fetch(template, **values):
-  for processor in template_context_processors:
+  ret = default_template_context_processor(request)
+  if ret:
+    values.update(ret)
+  for processor in Context.get_template_context_processors():
     ret = processor(request)
     if ret:
       values.update(ret)

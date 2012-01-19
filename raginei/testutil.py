@@ -73,10 +73,12 @@ def get_base(gae_home):
       datastore_stub.SetConsistencyPolicy(
         datastore_stub_util.TimeBasedHRConsistencyPolicy())
       
-      from .app import _routes
-      _routes.clear()
+      from .ctx import Context
+      self.test_context = Context.push()
     
     def _env_tearDown(self):
+      from .ctx import Context
+      Context.pop()
       self.testbed.deactivate()
   
   return GaeTestCase

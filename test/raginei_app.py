@@ -57,8 +57,9 @@ class MyTest(GaeTestCase):
     assert res.content_type == 'text/plain', res.content_type
 
   def test_request_middleware(self):
+    from raginei.app import request_middleware
     app, c = self.init_app()
-    @app.request_middleware
+    @request_middleware
     def middleware(req):
       assert req
       return 'request_middleware'
@@ -67,12 +68,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'request_middleware', res.data
 
   def test_response_middleware(self):
-    from raginei.app import route
+    from raginei.app import route, response_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       return 'foo'
-    @app.response_middleware
+    @response_middleware
     def middleware(res):
       assert res
       assert res.status_code == 200, res.status_code
@@ -83,7 +84,7 @@ class MyTest(GaeTestCase):
     assert res.data == 'response_middleware', res.data
   
   def test_routing_middleware(self):
-    from raginei.app import route
+    from raginei.app import route, routing_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
@@ -91,7 +92,7 @@ class MyTest(GaeTestCase):
     @route('/bar')
     def bar():
       return 'bar'
-    @app.routing_middleware
+    @routing_middleware
     def middleware(request, endpoint):
       assert endpoint == 'foo', endpoint
       return 'bar'
@@ -100,12 +101,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'bar', res.data
   
   def test_view_middleware(self):
-    from raginei.app import route
+    from raginei.app import route, view_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       return 'foo'
-    @app.view_middleware
+    @view_middleware
     def middleware(request, view_func):
       assert request
       assert view_func
@@ -116,12 +117,12 @@ class MyTest(GaeTestCase):
     assert res.data == 'view_middleware', res.data
   
   def test_exception_middleware(self):
-    from raginei.app import route
+    from raginei.app import route, exception_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       raise ValueError('foo')
-    @app.exception_middleware
+    @exception_middleware
     def middleware(request, e):
       assert request
       assert e
@@ -217,7 +218,7 @@ class MyTest(GaeTestCase):
     assert res.data == '/piyo', res.data
   
   def test_project_root(self):
-    import sys, os
+    import os
     app, c = self.init_app()
     assert app.project_root == os.path.dirname(
       os.path.dirname(os.path.abspath(__file__))), app.project_root
