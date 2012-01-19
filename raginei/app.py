@@ -114,9 +114,8 @@ class Application(object):
         func(self)
   
   def init_routes(self):
-    with _lock:
-      for endpoint, value in Context.get_routes().iteritems():
-        self.add_url_rule(value[0], endpoint=endpoint, **value[1])
+    for endpoint, value in Context.get_routes().iteritems():
+      self.add_url_rule(value[0], endpoint=endpoint, **value[1])
   
   def add_url_rule(self, rules, endpoint, view_func, **options):
     options.setdefault('methods', ('GET', 'POST', 'OPTIONS'))
@@ -410,9 +409,8 @@ class Application(object):
     return path
   
   def init_template_filters(self):
-    with _lock:
-      for name, f in Context.get_template_filters().iteritems():
-        self.jinja2_env.filters[name] = f
+    for name, f in Context.get_template_filters().iteritems():
+      self.jinja2_env.filters[name] = f
 
 
 def to_unicode(s, encoding='utf-8', errors='strict'):
@@ -438,8 +436,7 @@ def route(rules, **kwds):
     flet = toplevel(f)
     endpoint = '.'.join(funcname(f).split('.')[1:])
     kwds['view_func'] = flet
-    with _lock:
-      Context.add_route(endpoint, (rules, kwds))
+    Context.add_route(endpoint, (rules, kwds))
     return flet
   return decorator
 
@@ -454,8 +451,7 @@ def template_func(name=None):
 
 def _get_template_decorator(store, name):
   def decorator(f):
-    with _lock:
-      store(name or f.__name__, f)
+    store(name or f.__name__, f)
     return f
   if name and not isinstance(name, basestring):
     return decorator(name)
