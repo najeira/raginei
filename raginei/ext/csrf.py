@@ -5,7 +5,7 @@ import base64
 
 import jinja2
 
-from raginei.app import session, abort, template_func
+from raginei.app import request, session, abort, template_func, view_middleware
 from raginei.helpers import to_markup, input_tag, form_tag as form_tag_base
 
 
@@ -37,16 +37,14 @@ def form_tag(env, *args, **kwds):
   return to_markup(env, result)
 
 
-def register(server):
-  @server.request_middleware
-  def protect(request):
-    if request.is_get or request.is_taskqueue:
+@view_middleware
+def protect_from_csrf(request, view_func):
+  if request.is_get or request.is_taskqueue:
+    return
+  csrf_token = session.get('_csrf')
+  if csrf_token:
+    form_token = request.form.get('_csrf')
+    if csrf_token == form_token:
       return
-    csrf_token = session.get('_csrf')
-    if csrf_token:
-      form_token = request.form.get('_csrf')
-      if csrf_token == form_token:
-        return
-    view_func = server.view_functions.get(request.endpoint)
-    if view_func not in _exempts:
-      abort('CSRF detected.', 400)
+  if view_func not in _exempts:
+    abort('CSRF detected.', 400)
