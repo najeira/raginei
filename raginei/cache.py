@@ -11,6 +11,7 @@ import logging
 import functools
 import hashlib
 from google.appengine.api import memcache
+from google.appengine.ext.ndb.tasklets import Future
 from . import util
 
 
@@ -34,6 +35,8 @@ def memoize(expiry=300):
       data = None if force and expiry else memcache.get(key)
       if data is None:
         data = func(*args, **kwds)
+        if isinstance(data, Future):
+          data = data.get_result()
         if expiry:
           memcache.set(key, data, expiry)
       else:
