@@ -13,7 +13,7 @@ import re
 import jinja2
 from werkzeug.urls import url_quote_plus
 
-from raginei.app import request, url, current_app
+from raginei.app import request, url, current_app, template_filter, template_func
 
 
 def to_unicode(s, encoding='utf-8', errors='replace'):
@@ -97,6 +97,7 @@ FORMAT_DATE_MAP = {
   'html5': '%Y-%m-%d %H:%M:%S',
   }
 
+@template_filter('date')
 def format_date(dt, format=None):
   ### from aha coreblog3
   #TODO: i18n
@@ -126,6 +127,7 @@ def format_date(dt, format=None):
   return to_unicode(dt.strftime(to_str(format)))
 
 
+@template_filter
 @jinja2.environmentfilter
 def nl2br(env, s, arg=u'<br />'):
   if not s:
@@ -134,6 +136,7 @@ def nl2br(env, s, arg=u'<br />'):
   return to_markup(env, result)
 
 
+@template_filter
 @jinja2.environmentfunction
 def obfuscate(env, value, js=False):
   value = to_unicode(value)
@@ -150,6 +153,46 @@ def obfuscate(env, value, js=False):
   return to_markup(env, result)
 
 
+@template_filter('limit')
+def limit_width(s, num, end=u'...'):
+  if not s:
+    return s
+  length = int(num)
+  if length <= 0:
+    return u''
+  s = to_unicode(s)
+  if num >= len(s):
+    return s
+  return s[:num] + end
+
+
+@template_filter('number')
+def format_number(s):
+  if isinstance(s, basestring):
+    s = long(s)
+  s = ('%d' if isinstance(s, (int, long)) else '%f') % s
+  slen = len(s)
+  return ','.join(reversed([s[max(slen - (i + 3), 0):max(slen - i, 0)]
+    for i in range(0, slen + ((3 - (slen % 3)) % 3), 3)]))
+
+
+_USTRING_RE = re.compile(u'([\u0080-\uffff])')
+
+@template_filter
+@jinja2.environmentfilter
+def escape_js(env, s, quote_double_quotes=False):
+  s = to_unicode(s)
+  s = s.replace('\\', '\\\\')
+  s = s.replace('\r', '\\r')
+  s = s.replace('\n', '\\n')
+  s = s.replace('\t', '\\t')
+  s = s.replace("'", "\\'")
+  if quote_double_quotes:
+    s = s.replace('"', '&quot;')
+  return str(_USTRING_RE.sub(lambda _: r"\u%04x" % ord(_.group(1)), s))
+
+
+@template_func
 @jinja2.environmentfunction
 def mail_tag(env, mail, encode=None, **kwds):
   ### from symfony
@@ -216,6 +259,7 @@ def _iter_choices(choices):
     yield elem, choice
 
 
+@template_func
 @jinja2.environmentfunction
 def select_tag(env, name, choices, value=None, blank=True, **kwds):
   value = _form_get_list(name, value)
@@ -272,6 +316,7 @@ def check_or_radio_tag_one(env, type, name, choices, value=None):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def label_tag(env, id, value):
   e_id = jinja2.escape(id)
@@ -280,31 +325,19 @@ def label_tag(env, id, value):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def checkbox_tag(env, name, choices, value=None):
   return check_or_radio_tag(env, 'checkbox', name, choices, value)
 
 
+@template_func
 @jinja2.environmentfunction
 def radio_tag(env, name, choices, value=None):
   return check_or_radio_tag(env, 'radio', name, choices, value)
 
 
-_USTRING_RE = re.compile(u'([\u0080-\uffff])')
-
-@jinja2.environmentfilter
-def escape_js(env, s, quote_double_quotes=False):
-  s = to_unicode(s)
-  s = s.replace('\\', '\\\\')
-  s = s.replace('\r', '\\r')
-  s = s.replace('\n', '\\n')
-  s = s.replace('\t', '\\t')
-  s = s.replace("'", "\\'")
-  if quote_double_quotes:
-    s = s.replace('"', '&quot;')
-  return str(_USTRING_RE.sub(lambda _: r"\u%04x" % ord(_.group(1)), s))
-
-
+@template_func
 @jinja2.environmentfunction
 def link_options(env, **kwds):
   ### from symfony
@@ -354,6 +387,7 @@ def link_options(env, **kwds):
   return html_options(env, **kwds)
 
 
+@template_func
 @jinja2.environmentfunction
 def html_options(env, **kwds):
   if not kwds:
@@ -363,27 +397,6 @@ def html_options(env, **kwds):
     opts.append(u'%s="%s"' % (jinja2.escape(n), jinja2.escape(v)))
   result = u' %s ' % u' '.join(opts)
   return to_markup(env, result)
-
-
-def limit_width(s, num, end=u'...'):
-  if not s:
-    return s
-  length = int(num)
-  if length <= 0:
-    return u''
-  s = to_unicode(s)
-  if num >= len(s):
-    return s
-  return s[:num] + end
-
-
-def format_number(s):
-  if isinstance(s, basestring):
-    s = long(s)
-  s = ('%d' if isinstance(s, (int, long)) else '%f') % s
-  slen = len(s)
-  return ','.join(reversed([s[max(slen - (i + 3), 0):max(slen - i, 0)]
-    for i in range(0, slen + ((3 - (slen % 3)) % 3), 3)]))
 
 
 @jinja2.environmentfunction
@@ -403,6 +416,7 @@ def input_tag(env, type, name, value='', **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def link(env, name, path, **kwds):
   options = dict([(k[1:], kwds.pop(k)) for k in kwds.keys() if k.startswith('_')])
@@ -414,6 +428,7 @@ def link(env, name, path, **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def link_if(env, condition, name, *args, **kwds):
   if condition:
@@ -422,6 +437,7 @@ def link_if(env, condition, name, *args, **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def image_tag(env, src, **kwds):
   if not src.startswith('/') and not src.startswith('http'):
@@ -430,6 +446,7 @@ def image_tag(env, src, **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def form_tag(env, path=None, **kwds):
   kwds.setdefault('method', 'post')
@@ -441,28 +458,7 @@ def form_tag(env, path=None, **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def form_tag_close(env):
   return to_markup(env, '</form>')
-
-
-def register(server):
-  server.template_filter('date')(format_date)
-  server.template_filter(nl2br)
-  server.template_filter(obfuscate)
-  server.template_filter(escape_js)
-  server.template_filter('limit')(limit_width)
-  server.template_filter('number')(format_number)
-  server.template_func(mail_tag)
-  server.template_func(select_tag)
-  server.template_func(label_tag)
-  server.template_func(checkbox_tag)
-  server.template_func(radio_tag)
-  server.template_func(link_options)
-  server.template_func(html_options)
-  server.template_func('input')(input_tag)
-  server.template_func(link)
-  server.template_func(link_if)
-  server.template_func(image_tag)
-  server.template_func(form_tag)
-  server.template_func(form_tag_close)

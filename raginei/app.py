@@ -41,6 +41,9 @@ config = LocalProxy(lambda: current_app.config)
 
 _lock = threading.RLock()
 _routes = {}
+_template_funcs = {}
+_template_filters = {}
+_template_context_processors = {}
 
 
 def is_debug():
@@ -75,8 +78,6 @@ class Application(object):
     self.url_map.strict_slashes = self.config.get('url_strict_slashes', False)
     self.request_class = self.config.get('request_class') or Request
     self.response_class = self.config.get('response_class') or Response
-    self.template_funcs = {}
-    self.template_context_processors = [default_template_context_processor]
     self.request_middlewares = []
     self.view_middlewares = []
     self.response_middlewares = []
@@ -112,7 +113,7 @@ class Application(object):
       func(self)
   
   def register_extension_helpers(self):
-    self.register_extension('raginei.helpers.register')
+    import_string('raginei.helpers')
   
   def register_extension_session(self):
     self.register_extension(self.config.get(
@@ -315,6 +316,7 @@ class Application(object):
       with _lock:
         if self.is_first_request:
           self.init_routes()
+          self.init_template_filters()
         self.is_first_request = False
     self.init_context(environ)
     try:
@@ -415,29 +417,11 @@ class Application(object):
       path = path + '/'
     return path
   
-  def context_processor(self, f):
+  def init_template_filters(self):
     with _lock:
-      self.template_context_processors.append(f)
-    return f
-  
-  def template_filter(self, name=None):
-    if name and not isinstance(name, basestring):
-      return self.template_filter()(name)
-    def decorator(f):
-      with _lock:
-        self.jinja2_env.filters[name or f.__name__] = f
-      return f
-    return decorator
-  
-  def template_func(self, name=None):
-    if name and not isinstance(name, basestring):
-      return self.template_func()(name)
-    def decorator(f):
-      with _lock:
-        self.template_funcs[name or f.__name__] = f
-      return f
-    return decorator
-  
+      for name, f in _template_filters.iteritems():
+        self.jinja2_env.filters[name] = f
+
   def request_middleware(self, f):
     with _lock:
       self.request_middlewares.append(f)
@@ -494,19 +478,43 @@ def route(rules, **kwds):
   return decorator
 
 
+def template_filter(name=None):
+  return _get_template_decorator(template_filter, _template_filters, name)
+
+
+def template_func(name=None):
+  return _get_template_decorator(template_func, _template_funcs, name)
+
+
+def _get_template_decorator(func, store, name):
+  if name and not isinstance(name, basestring):
+    return func()(name)
+  def decorator(f):
+    with _lock:
+      store[name or f.__name__] = f
+    return f
+  return decorator
+
+
 def default_template_context_processor(request):
   values = dict(
     config=config,
     request=request,
     session=session,
   )
-  values.update(current_app.template_funcs)
+  values.update(_template_funcs)
   return values
+
+
+def context_processor(f):
+  with _lock:
+    _template_context_processors.append(f)
+  return f
 
 
 @measure_time
 def fetch(template, **values):
-  for processor in current_app.template_context_processors:
+  for processor in template_context_processors:
     ret = processor(request)
     if ret:
       values.update(ret)
