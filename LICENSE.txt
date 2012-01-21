@@ -6,7 +6,7 @@ Raginei is written and maintained by Raginei Team.
 Developer:
 - najeira <najeira@gmail.com>
 
-Copyright (c) 2010 by najeira and contributors, All rights reserved.
+Copyright (c) 2011 by najeira and contributors, All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -143,29 +143,6 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-aetycoon
-========
-
-http://github.com/Arachnid/aetycoon
-
-aetycoon provides a library of useful App Engine datastore property classes.
-
-The property classes included here cover use cases that are too specialized to
-be included in the SDK, or simply weren't included, but are nevertheless
-generally useful. They include:
-
-- DerivedProperty, which allows you to automatically generate values
-  - LowerCaseProperty, which stores the lower-cased value of another property
-  - LengthProperty, which stores the length of another property
-- ChoiceProperty efficiently handles properties which may only be assigned a
-  value from a limited set of choices
-- CompressedBlobProperty and CompressedTextProperty store data/text in a
-  compressed form
-- ArrayProperty store array.array objects for lean and efficient POD type
-  storage
-With aetycoon, you'll have all the properties you're ever likely to need.
 
 
 Flask
