@@ -142,8 +142,3 @@ class Context(object):
     return ret
 
 toplevel_context = Context.push()
-
-#load default modeles to register toplevel context
-import helpers
-import ext.session
-import ext.csrf

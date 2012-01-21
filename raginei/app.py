@@ -600,3 +600,9 @@ def toplevel(func):
   flet.__is_toplevel__ = True
   flet.__wrapped__ = func
   return flet
+
+
+#load default modeles to register toplevel context
+import helpers
+import ext.session
+import ext.csrf
