@@ -10,8 +10,21 @@ raginei.cache
 import logging
 import functools
 import hashlib
-from google.appengine.api import memcache
-from google.appengine.ext.ndb.tasklets import Future
+
+try:
+  from google.appengine.api import memcache
+  from google.appengine.ext.ndb.tasklets import Future
+except ImportError:
+  Future = None
+  try:
+    import pylibmc as memcache
+  except ImportError:
+    try:
+      import memcache
+    except ImportError:
+      memcache = None
+
+
 from . import util
 
 
@@ -32,12 +45,14 @@ def memoize(expiry=300):
       #If the key is longer then max key size, it will be hashed with sha1
       #and will be replaced with the hex representation of the said hash.
       key = cache_key(func, *args, **kwds)
-      data = None if force and expiry else memcache.get(key)
+      data = None
+      if not force and expiry and memcache:
+        data = memcache.get(key)
       if data is None:
         data = func(*args, **kwds)
-        if isinstance(data, Future):
+        if Future and isinstance(data, Future):
           data = data.get_result()
-        if expiry:
+        if expiry and memcache:
           memcache.set(key, data, expiry)
       else:
         logging.debug('memcache: use cache of %s' % key)
@@ -47,5 +62,6 @@ def memoize(expiry=300):
 
 
 def memoize_delete(func, *args, **kwds):
-  key = cache_key(func, *args, **kwds)
-  memcache.delete(key)
+  if memcache:
+    key = cache_key(func, *args, **kwds)
+    memcache.delete(key)
