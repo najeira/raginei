@@ -18,7 +18,7 @@ class Context(object):
     self.routes = {}
     self.template_funcs = {}
     self.template_filters = {}
-    self.template_context_processors = {}
+    self.template_context_processors = []
     self.request_middlewares = []
     self.view_middlewares = []
     self.response_middlewares = []
@@ -56,12 +56,12 @@ class Context(object):
     return cls.set_to_dict('template_filters', key, value)
   
   @classmethod
-  def add_template_context_processor(cls, key, value):
-    return cls.set_to_dict('template_context_processors', key, value)
-  
-  @classmethod
   def set_to_dict(cls, name, key, value):
     getattr(cls.context_stack[-1], name)[key] = value
+
+  @classmethod
+  def add_template_context_processor(cls, value):
+    return cls.append_to_list('template_context_processors', value)
   
   @classmethod
   def add_request_middleware(cls, value):
@@ -101,7 +101,7 @@ class Context(object):
   
   @classmethod
   def get_template_context_processors(cls):
-    return cls.get_merged_dict('template_context_processors')
+    return cls.get_merged_list('template_context_processors')
   
   @classmethod
   def get_request_middlewares(cls):
