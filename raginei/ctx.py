@@ -33,6 +33,7 @@ class Context(object):
   
   @classmethod
   def pop(cls):
+    assert 2 <= len(cls.context_stack)
     return cls.context_stack.pop()
   
   def __enter__(self):
@@ -72,11 +73,11 @@ class Context(object):
   
   @classmethod
   def add_response_middleware(cls, value):
-    return cls.insert_to_list('response_middlewares', value)
+    return cls.append_to_list('response_middlewares', value)
   
   @classmethod
   def add_exception_middleware(cls, value):
-    return cls.insert_to_list('exception_middlewares', value)
+    return cls.append_to_list('exception_middlewares', value)
   
   @classmethod
   def add_routing_middleware(cls, value):
@@ -85,10 +86,6 @@ class Context(object):
   @classmethod
   def append_to_list(cls, name, value):
     getattr(cls.context_stack[-1], name).append(value)
-  
-  @classmethod
-  def insert_to_list(cls, name, value):
-    getattr(cls.context_stack[-1], name).insert(0, value)
   
   @classmethod
   def get_routes(cls):
@@ -146,6 +143,7 @@ class Context(object):
 
 toplevel_context = Context.push()
 
+#load default modeles to register toplevel context
 import helpers
 import ext.session
 import ext.csrf

@@ -74,7 +74,7 @@ def get_base(gae_home):
         datastore_stub_util.TimeBasedHRConsistencyPolicy())
       
       from .ctx import Context
-      self.test_context = Context.push()
+      Context.push()
     
     def _env_tearDown(self):
       from .ctx import Context
