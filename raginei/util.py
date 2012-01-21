@@ -9,6 +9,8 @@ raginei.util
 
 import os
 import sys
+import logging
+import time
 
 
 def to_str(v):
@@ -32,6 +34,17 @@ def funcname(f):
     return '%s.%s' % (f.__module__, getattr(f, '__name__', str(f)))
 
 
+def wraps(wrapped):
+  def _wrapper(func):
+    func.__module__ = wrapped.__module__
+    func.__name__ = wrapped.__name__
+    func.__doc__ = wrapped.__doc__
+    func.__dict__.update(wrapped.__dict__)
+    func.__wrapped__ = wrapped
+    return func
+  return _wrapper
+
+
 def json_module():
   try:
     try:
@@ -41,6 +54,30 @@ def json_module():
   except ImportError:
     from django.utils import simplejson
   return simplejson
+
+
+def is_debug():
+  return 'localhost' == os.environ.get('SERVER_NAME', '') or \
+    os.environ.get('SERVER_SOFTWARE', '').startswith('Dev')
+
+
+def measure_time(f):
+  
+  if not is_debug():
+    return f
+  
+  from .app import current_app
+  callee_name = funcname(f)
+  
+  @wraps(f)
+  def wrapper(*args, **kwds):
+    start = time.clock()
+    try:
+      return f(*args, **kwds)
+    finally:
+      if current_app.config.get('logging_internal'):
+        logging.info('%s: %.6f' % (callee_name, time.clock() - start))
+  return wrapper
 
 
 def setup_gae_path(DIR_PATH, include_google_sql_libs=False):

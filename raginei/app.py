@@ -12,12 +12,7 @@ from __future__ import with_statement
 import sys
 import os
 import logging
-import functools
-import time
 import threading
-
-from google.appengine.ext.ndb.tasklets import tasklet as tasklet_ndb
-from google.appengine.ext.ndb.context import toplevel as toplevel_ndb
 
 from jinja2 import Environment
 
@@ -28,7 +23,7 @@ from werkzeug.routing import Map, Rule, RequestRedirect
 from werkzeug.local import Local, LocalManager, LocalProxy
 
 from .wrappers import Request, Response, Found, MovedPermanently
-from .util import funcname, json_module
+from .util import funcname, json_module, is_debug, measure_time
 from .ctx import Context
 
 local = Local()
@@ -41,29 +36,6 @@ url_adapter = local('url_adapter')
 config = LocalProxy(lambda: current_app.config)
 
 _lock = threading.RLock()
-
-
-def is_debug():
-  return 'localhost' == os.environ.get('SERVER_NAME', '') or \
-    os.environ.get('SERVER_SOFTWARE', '').startswith('Dev')
-
-
-def measure_time(f):
-  
-  if not is_debug():
-    return f
-  
-  callee_name = funcname(f)
-  
-  @functools.wraps(f)
-  def wrapper(*args, **kwds):
-    start = time.clock()
-    try:
-      return f(*args, **kwds)
-    finally:
-      if current_app.config.get('logging_internal'):
-        logging.info('%s: %.6f' % (callee_name, time.clock() - start))
-  return wrapper
 
 
 class Application(object):
@@ -307,13 +279,11 @@ class Application(object):
   @classmethod
   def instance(cls, *args, **kwds):
     obj = cls(*args, **kwds)
-    # wrap the application
     if obj.debug and not obj.test:
       return get_debugged_application_class()(obj, evalex=True)
     return obj
   
   def run(self):
-    # wrap the application
     if self.debug and not self.test:
       if not getattr(self, '_debugged_application', None):
         self._debugged_application = get_debugged_application_class()(
@@ -597,20 +567,36 @@ def url(endpoint, **values):
   return ret
 
 
+### for Google App Engine
+
+try:
+  from google.appengine.ext.ndb.tasklets import tasklet as tasklet_ndb
+  from google.appengine.ext.ndb.context import toplevel as toplevel_ndb
+except ImportError:
+  tasklet_ndb = toplevel_ndb = None
+
+
 def tasklet(func):
-  if getattr(func, '_is_tasklet_', None):
+  if not tasklet_ndb:
     return func
-  if getattr(func, '_is_toplevel_', None):
+  if getattr(func, '__is_tasklet__', None):
+    return func
+  if getattr(func, '__is_toplevel__', None):
     return func
   flet = tasklet_ndb(func)
-  flet._is_tasklet_ = True
+  flet.__module__ = func.__module__
+  flet.__is_tasklet__ = True
+  flet.__wrapped__ = func
   return flet
 
 
 def toplevel(func):
-  if getattr(func, '_is_toplevel_', None):
+  if not toplevel_ndb:
+    return func
+  if getattr(func, '__is_toplevel__', None):
     return func
   flet = toplevel_ndb(func)
   flet.__module__ = func.__module__
-  flet._is_toplevel_ = True
+  flet.__is_toplevel__ = True
+  flet.__wrapped__ = func
   return flet
