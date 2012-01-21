@@ -81,6 +81,8 @@ class Application(object):
   
   def make_response(self, *args, **kwds):
     if 1 == len(args) and not isinstance(args[0], basestring):
+      if isinstance(args[0], exceptions.HTTPException):
+        return args[0].get_response(request.environ)
       return args[0]
     return self.response_class(*args, **kwds)
   
@@ -338,6 +340,7 @@ class Application(object):
       return val
     return is_debug()
   
+  @property
   def test(self):
     return self.config.get('test')
   
@@ -545,9 +548,7 @@ def get_template_path(template):
 
 def get_debugged_application_class():
   from werkzeug.debug import DebuggedApplication
-  def attr_get(obj, name):
-    return getattr(obj.app, name)
-  DebuggedApplication.__getattr__ = attr_get
+  DebuggedApplication.__getattr__ = lambda x, y: getattr(x.app, y)
   return DebuggedApplication
 
 
