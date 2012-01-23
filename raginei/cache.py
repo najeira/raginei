@@ -10,6 +10,7 @@ raginei.cache
 import logging
 import functools
 import hashlib
+import base64
 
 try:
   from google.appengine.api import memcache
@@ -33,7 +34,7 @@ def cache_key(func, *args, **kwds):
     util.funcname(func), util.to_str(*args, **kwds))
   if isinstance(key, unicode):
     key = key.encode('utf-8')
-  return hashlib.sha1(key).hexdigest()
+  return base64.b32encode(hashlib.sha1(key).digest())
 
 
 def memoize(expiry=300):
@@ -42,8 +43,6 @@ def memoize(expiry=300):
     @functools.wraps(func)
     def _wrapper(*args, **kwds):
       force = kwds.pop('_force', False)
-      #If the key is longer then max key size, it will be hashed with sha1
-      #and will be replaced with the hex representation of the said hash.
       key = cache_key(func, *args, **kwds)
       data = None
       if not force and expiry and memcache:
