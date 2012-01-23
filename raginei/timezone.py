@@ -3,28 +3,20 @@
 import datetime
 
 
-class JstTzinfo(datetime.tzinfo):
+class TzInfo(datetime.tzinfo):
+  def __init__(self, name, offset):
+    self._offset = datetime.timedelta(hours=offset)
+    self._name = name
   def utcoffset(self, dt):
-    return datetime.timedelta(hours=9)
+    return self._offset
   def dst(self, dt):
     return datetime.timedelta(0)
   def tzname(self, dt):
-    return 'JST'
+    return self._name
 
 
-class UtcTzinfo(datetime.tzinfo):
-  def utcoffset(self, dt):
-    return datetime.timedelta(0)
-  def dst(self, dt):
-    return datetime.timedelta(0)
-  def tzname(self, dt):
-    return 'UTC'
-
-
-JST_TZ = JstTzinfo()
-UTC_TZ = UtcTzinfo()
-JST_OFFSET = JST_TZ.utcoffset(None)
-UTC_OFFSET = UTC_TZ.utcoffset(None)
+UTC_TZ = TzInfo('UTC', 0)
+JST_TZ = TzInfo('JST', 9)
 
 
 def utc(val):
