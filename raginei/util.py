@@ -16,11 +16,11 @@ import time
 def to_str(v):
   if isinstance(v, basestring):
     return v
-  elif isinstance(v, (list, tuple, set)):
-    return '&'.join([to_str(x) for x in v])
+  elif isinstance(v, (list, tuple, set, frozenset)):
+    return u'&'.join([to_str(x) for x in v])
   elif isinstance(v, dict):
-    return '&'.join(['%s=%s' % (to_str(k), to_str(v[k])) for k in sorted(v.keys())])
-  return repr(v)
+    return u'&'.join([u'%s=%s' % (to_str(k), to_str(v[k])) for k in sorted(v.keys())])
+  return str(v)
 
 
 def funcname(f):
