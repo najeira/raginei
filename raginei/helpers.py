@@ -399,6 +399,7 @@ def html_options(env, **kwds):
   return to_markup(env, result)
 
 
+@template_func
 @jinja2.environmentfunction
 def input_tag(env, type, name, value='', **kwds):
   value = _form_get(name, value)

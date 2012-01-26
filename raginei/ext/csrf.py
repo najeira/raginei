@@ -38,7 +38,7 @@ def form_tag(env, *args, **kwds):
 
 
 @view_middleware
-def protect_from_csrf(request, view_func):
+def protect_from_csrf(request, view_func, view_args):
   if request.is_get or request.is_taskqueue:
     return
   csrf_token = session.get('_csrf')

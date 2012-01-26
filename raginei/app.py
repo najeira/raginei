@@ -116,7 +116,7 @@ class Application(object):
     mws = Context.get_view_middlewares()
     if mws:
       for mw in mws:
-        response = mw(request, view_func, **request.view_args)
+        response = mw(request, view_func, request.view_args)
         if response:
           return response
   
@@ -383,7 +383,7 @@ def to_unicode(s, encoding='utf-8', errors='strict'):
   return s
 
 
-def route(rules, **kwds):
+def route(*rules, **kwds):
   def decorator(f):
     flet = toplevel(f)
     endpoint = '.'.join(funcname(f).split('.')[1:])
