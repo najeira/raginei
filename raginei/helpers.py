@@ -108,7 +108,7 @@ def format_date(dt, format=None):
   if not isinstance(dt, datetime.datetime):
     dt = datetime.datetime(dt.year, dt.month, dt.day)
     if not format:
-      format = 'date_short'
+      format = 'date'
   
   if not format:
     format = 'short'
@@ -441,7 +441,10 @@ def link_if(env, condition, name, *args, **kwds):
 @template_func
 @jinja2.environmentfunction
 def image_tag(env, src, **kwds):
-  if not src.startswith('/') and not src.startswith('http'):
+  if not src:
+    return ''
+  if not src.startswith('/') and not src.startswith('http://') and\
+     not src.startswith('https://'):
     src = current_app.static_dir + src
   result = u'<img src="%s"%s />' % (jinja2.escape(src), html_options(env, **kwds))
   return to_markup(env, result)
