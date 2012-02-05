@@ -554,6 +554,10 @@ def get_debugged_application_class():
 
 def url(endpoint, **values):
   external = values.pop('_external', False)
+  if endpoint.startswith('http://') or \
+    endpoint.startswith('https://') or \
+    endpoint.startswith('//'):
+    return endpoint
   if endpoint.startswith('/'):
     ret = endpoint
   else:
