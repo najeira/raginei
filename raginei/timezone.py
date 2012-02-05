@@ -5,6 +5,7 @@ import datetime
 
 class TzInfo(datetime.tzinfo):
   def __init__(self, name, offset):
+    super(TzInfo, self).__init__()
     self._offset = datetime.timedelta(hours=offset)
     self._name = name
   def utcoffset(self, dt):
