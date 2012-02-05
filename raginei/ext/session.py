@@ -2,7 +2,8 @@
 
 import datetime
 from werkzeug.contrib.securecookie import SecureCookie
-from raginei.app import current_app, request, local, request_middleware, response_middleware
+from raginei.app import current_app, request, local, template_func, \
+  request_middleware, response_middleware
 
 
 @request_middleware
@@ -11,6 +12,9 @@ def load_session_from_cookie(request):
   if secret:
     local.session = SecureCookie.load_cookie(request,
       current_app.config.get('session_cookie_name') or 'session', secret_key=secret)
+    request._flash = local.session.pop('_flash', '')
+  else:
+    local.session = {}
 
 
 @response_middleware
@@ -29,15 +33,13 @@ def save_session_to_cookie(response):
         current_app.config.get('session_cookie_name') or 'session', expires=expires)
 
 
-def flash(message, category='message'):
-  local.session.setdefault('_flashes', []).append((category, message))
+def flash(message):
+  local.session['_flash'] = message
 
 
-def get_flashed_messages(with_categories=False):
+@template_func
+def get_flashed_message():
   try:
-    flashes = request._flashes
+    return request._flash
   except AttributeError:
-    flashes = request._flashes = local.session.pop('_flashes', [])
-  if not with_categories:
-    return [x[1] for x in flashes]
-  return flashes
+    return ''
