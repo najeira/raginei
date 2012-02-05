@@ -57,7 +57,8 @@ def json_module():
 
 
 def is_debug():
-  return 'localhost' == os.environ.get('SERVER_NAME', '') or \
+  server_name = os.environ.get('SERVER_NAME', '')
+  return not server_name or 'localhost' == server_name or \
     os.environ.get('SERVER_SOFTWARE', '').startswith('Dev')
 
 
