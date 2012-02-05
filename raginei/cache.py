@@ -39,13 +39,15 @@ def cache_key(func, *args, **kwds):
 
 def memoize(expiry=300):
   """A decorator to memoize functions in the memcache."""
+  from .util import is_debug
+  debug = is_debug()
   def _decorator(func):
     @functools.wraps(func)
     def _wrapper(*args, **kwds):
       force = kwds.pop('_force', False)
       key = cache_key(func, *args, **kwds)
       data = None
-      if not force and expiry and memcache:
+      if not debug and not force and expiry and memcache:
         data = memcache.get(key)
       if data is None:
         data = func(*args, **kwds)
