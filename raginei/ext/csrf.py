@@ -5,7 +5,7 @@ import base64
 
 import jinja2
 
-from raginei.app import request, session, abort, template_func, view_middleware
+from raginei.app import session, abort, template_func, view_middleware
 from raginei.helpers import to_markup, input_tag, form_tag as form_tag_base
 
 
