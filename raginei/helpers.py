@@ -161,9 +161,9 @@ def limit_width(s, num, end=u'...'):
   if length <= 0:
     return u''
   s = to_unicode(s)
-  if num >= len(s):
+  if length >= len(s):
     return s
-  return s[:num] + end
+  return s[:length] + end
 
 
 @template_filter('number')
@@ -287,18 +287,18 @@ def select_tag(env, name, choices, value=None, blank=True, **kwds):
   return to_markup(env, result)
 
 
-def check_or_radio_tag(env, type, name, choices, value=None):
+def check_or_radio_tag(env, typ, name, choices, value=None):
   value = _form_get_list(name, value)
   output = []
   for elem, choice in _iter_choices(choices):
     output.append(check_or_radio_tag_one(
-      env, type, name, (elem, choice), value))
+      env, typ, name, (elem, choice), value))
   
   result = u'\n'.join(output)
   return to_markup(env, result)
 
 
-def check_or_radio_tag_one(env, type, name, choices, value=None):
+def check_or_radio_tag_one(env, typ, name, choices, value=None):
   elem, choice = choices
   elem = to_unicode(elem)
   choice = to_unicode(choice)
@@ -309,19 +309,19 @@ def check_or_radio_tag_one(env, type, name, choices, value=None):
   if elem in value:
     params['checked'] = u'checked'
   
-  label = label_tag(env, tag_id, choice)
-  input = input_tag(env, type, name, elem, **params)
-  
-  result = input + label
-  return to_markup(env, result)
+  input = input_tag(env, typ, name, elem, **params)
+  label_text = jinja2.Markup(jinja2.Markup(input) + jinja2.escape(choice))
+  label = label_tag(env, tag_id, label_text, **{'class': 'radio'})
+  return to_markup(env, label)
 
 
 @template_func
 @jinja2.environmentfunction
-def label_tag(env, id, value):
+def label_tag(env, id, value, **kwds):
   e_id = jinja2.escape(id)
   e_value = jinja2.escape(value)
-  result = u'<label for="%s">%s</label>' % (e_id, e_value)
+  options = html_options(env, **kwds)
+  result = u'<label for="%s" %s>%s</label>' % (e_id, options, e_value)
   return to_markup(env, result)
 
 
@@ -401,19 +401,19 @@ def html_options(env, **kwds):
 
 @template_func
 @jinja2.environmentfunction
-def input_tag(env, type, name, value='', **kwds):
+def input_tag(env, typ, name, value='', **kwds):
   value = _form_get(name, value)
   e_name = jinja2.escape(name)
-  e_type = jinja2.escape(type)
+  e_typ = jinja2.escape(typ)
   e_value = jinja2.escape(value)
   tag_id = kwds.pop('id', None) or ('form_' + e_name)
   options = html_options(env, **kwds)
-  if 'textarea' == type:
+  if 'textarea' == typ:
     result = u'<textarea id="%s" name="%s" %s >%s</textarea>' % (
       tag_id, e_name, options, e_value)
   else:
     result = u'<input id="%s" type="%s" name="%s" value="%s" %s />' % (
-      tag_id, e_type, e_name, e_value, options)
+      tag_id, e_typ, e_name, e_value, options)
   return to_markup(env, result)
 
 
