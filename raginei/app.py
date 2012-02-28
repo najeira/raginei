@@ -404,8 +404,9 @@ class Application(object):
     return path
   
   def init_template_filters(self):
+    env = self.jinja2_env
     for name, f in Context.get_template_filters().iteritems():
-      self.jinja2_env.filters[name] = f
+      env.filters[name] = f
 
 
 def to_unicode(s, encoding='utf-8', errors='strict'):

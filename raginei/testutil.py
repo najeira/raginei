@@ -28,6 +28,7 @@ def get_base(gae_home):
   
   setup_path(gae_home)
   
+  import raginei.app
   from google.appengine.ext import testbed
   
   class GaeTestCase(unittest.TestCase):
