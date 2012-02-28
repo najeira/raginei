@@ -38,6 +38,51 @@ config = LocalProxy(lambda: current_app.config)
 _lock = threading.RLock()
 
 
+try:
+  from google.appengine.ext.ndb import toplevel as toplevel_ndb, \
+    tasklet as tasklet_ndb, synctasklet as synctasklet_ndb
+except ImportError:
+  tasklet_ndb = toplevel_ndb = synctasklet_ndb = None
+
+
+def toplevel(func):
+  if not toplevel_ndb:
+    return func
+  if getattr(func, '__is_toplevel__', None):
+    return func
+  flet = wrap_tasklet(toplevel_ndb, func)
+  flet.__is_toplevel__ = True
+  return flet
+
+
+def tasklet(func):
+  if not tasklet_ndb:
+    return func
+  if getattr(func, '__is_tasklet__', None):
+    return func
+  if getattr(func, '__is_toplevel__', None):
+    return func
+  return wrap_tasklet(tasklet_ndb, func)
+
+
+def synctasklet(func):
+  if not synctasklet_ndb:
+    return func
+  if getattr(func, '__is_tasklet__', None):
+    return func
+  if getattr(func, '__is_toplevel__', None):
+    return func
+  return wrap_tasklet(synctasklet_ndb, func)
+
+
+def wrap_tasklet(wrapper, func):
+  flet = wrapper(func)
+  flet.__module__ = func.__module__
+  flet.__is_tasklet__ = True
+  flet.__wrapped__ = func
+  return flet
+
+
 class Application(object):
   
   def __init__(self, config=None, **kwds):
@@ -186,11 +231,13 @@ class Application(object):
   @measure_time
   def call_view_func(self, view_func, context):
     result = view_func(**context)
-    if not isinstance(result, self.response_class):
+    if not result:
+      result = self.make_response('')
+    elif not isinstance(result, self.response_class):
       if isinstance(result, (RequestRedirect, Found)):
         result = result.get_response(request.environ)
       elif not isinstance(result, basestring):
-        result = result.get_result()
+        result = result.get_result() #Future
     return self.view_func_result_to_response(result)
   
   def view_func_result_to_response(self, result):
@@ -260,6 +307,7 @@ class Application(object):
           self.init_template_filters()
         self.is_first_request = False
   
+  @toplevel
   def do_run(self, environ, start_response):
     self.init_on_first_request()
     self.init_context(environ)
@@ -285,16 +333,11 @@ class Application(object):
       return get_debugged_application_class()(obj, evalex=True)
     return obj
   
-  def run(self):
-    if self.debug and not self.test:
-      if not getattr(self, '_debugged_application', None):
-        self._debugged_application = get_debugged_application_class()(
-          self, evalex=True)
-      app_obj = self._debugged_application
-    else:
-      app_obj = self
-    from wsgiref.handlers import CGIHandler
-    CGIHandler().run(app_obj)
+  def run(self, host='127.0.0.1', port=5000, **options):
+    from werkzeug import run_simple
+    options.setdefault('use_reloader', self.debug)
+    options['use_debugger'] = False
+    return run_simple(host, port, self, **options)
   
   def get_traceback(self, exc_info):
     import traceback
@@ -385,7 +428,7 @@ def to_unicode(s, encoding='utf-8', errors='strict'):
 
 def route(*rules, **kwds):
   def decorator(f):
-    flet = toplevel(f)
+    flet = synctasklet(f)
     endpoint = '.'.join(funcname(f).split('.')[1:])
     kwds['view_func'] = flet
     Context.add_route(endpoint, (rules, kwds))
@@ -570,41 +613,6 @@ def url(endpoint, **values):
     scheme = 'https' if request.is_secure else 'http'
     ret = '%s://%s%s' % (scheme, request.environ['SERVER_NAME'], ret)
   return ret
-
-
-### for Google App Engine
-
-try:
-  from google.appengine.ext.ndb.tasklets import tasklet as tasklet_ndb
-  from google.appengine.ext.ndb.context import toplevel as toplevel_ndb
-except ImportError:
-  tasklet_ndb = toplevel_ndb = None
-
-
-def tasklet(func):
-  if not tasklet_ndb:
-    return func
-  if getattr(func, '__is_tasklet__', None):
-    return func
-  if getattr(func, '__is_toplevel__', None):
-    return func
-  flet = tasklet_ndb(func)
-  flet.__module__ = func.__module__
-  flet.__is_tasklet__ = True
-  flet.__wrapped__ = func
-  return flet
-
-
-def toplevel(func):
-  if not toplevel_ndb:
-    return func
-  if getattr(func, '__is_toplevel__', None):
-    return func
-  flet = toplevel_ndb(func)
-  flet.__module__ = func.__module__
-  flet.__is_toplevel__ = True
-  flet.__wrapped__ = func
-  return flet
 
 
 #load default modeles to register toplevel context
