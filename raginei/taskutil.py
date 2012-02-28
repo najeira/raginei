@@ -9,7 +9,7 @@ raginei.taskutil
 
 import uuid
 from google.appengine.api import taskqueue
-from google.appengine.ext.ndb.model import in_transaction
+from google.appengine.ext.ndb import in_transaction
 
 
 def add(url, name=None, queue_name='default', transactional=False,

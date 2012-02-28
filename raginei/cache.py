@@ -14,7 +14,7 @@ import base64
 
 try:
   from google.appengine.api import memcache
-  from google.appengine.ext.ndb.tasklets import Future
+  from google.appengine.ext.ndb import Future
 except ImportError:
   Future = None
   try:
