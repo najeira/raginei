@@ -107,10 +107,11 @@ class MyTest(GaeTestCase):
     def foo():
       return 'foo'
     @view_middleware
-    def middleware(request, view_func):
+    def middleware(request, view_func, view_args):
       assert request
       assert view_func
       assert view_func.__name__ == 'foo'
+      assert not view_args
       return 'view_middleware'
     res = c.get('/')
     assert res.status_code == 200, res.status_code
