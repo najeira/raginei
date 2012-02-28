@@ -17,6 +17,7 @@ import re
 from os import path, listdir, makedirs
 import threading
 import Queue
+import logging
 
 
 def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
@@ -81,7 +82,8 @@ def compile_dir(env, src_path, dst_path, pattern=r'^[^\.].*\..*[^~]$',
     if path.isdir(src_name):
       if not path.isdir(dst_name):
         makedirs(dst_name)
-      compile_dir(env, src_name, dst_name, encoding=encoding, base_dir=base_dir)
+      for dir_params in compile_dir(env, src_name, dst_name, encoding=encoding, base_dir=base_dir):
+        yield dir_params
     elif path.isfile(src_name) and re.match(pattern, filename) and \
       not re.match(negative_pattern, filename):
       #compile_file(env, src_name, dst_name, encoding=encoding,
@@ -102,7 +104,10 @@ class ThreadPool(object):
       func = self._queue.get()
       if func is None:
         break
-      func[0](*func[1], **func[2])
+      try:
+        func[0](*func[1], **func[2])
+      except Exception as ex:
+        logging.exception(ex)
   
   def submit(self, func, *args, **kwds):
     self._queue.put((func, args, kwds))
@@ -114,11 +119,10 @@ class ThreadPool(object):
       thread.join()
 
 
-def compile(app, templates_dir, dest_dir, threads=1):
+def compile(jinja2_env, templates_dir, dest_dir, threads=1):
   thread_pool = ThreadPool(threads)
   try:
-    for func, args, kwds in compile_dir(
-      app.jinja2_env, templates_dir, dest_dir):
+    for func, args, kwds in compile_dir(jinja2_env, templates_dir, dest_dir):
       thread_pool.submit(func, *args, **kwds)
   finally:
     thread_pool.shutdown()
@@ -164,20 +168,19 @@ def main():
   
   from raginei.util import setup_gae_path
   
-  setup_gae_path(gae_home=options['gae'])
+  setup_gae_path(options['gae'])
   
   os.environ["APPLICATION_ID"] = 'raginei-jinja2compiler'
   
   from werkzeug.utils import import_string
   
-  app_path = options['app'].split('.')
-  app_module = import_string('.'.join(app_path[:-1]))
-  application = getattr(app_module, app_path[-1])
+  application = import_string(options['app'])
+  application.init_on_first_request()
   
   if not path.isdir(dest_dir):
     makedirs(dest_dir)
   
-  compile(application, src_dir, dest_dir, options['threads'])
+  compile(application.jinja2_env, src_dir, dest_dir, options['threads'])
 
 
 if __name__ == '__main__':
