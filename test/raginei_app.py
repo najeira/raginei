@@ -14,77 +14,76 @@ class MyTest(GaeTestCase):
     super(MyTest, self).tearDown()
   
   def init_app(self, **kwds):
-    from raginei.app import Application
-    from raginei.wrappers import Response
+    from raginei import Application, Response
     app = Application.instance(test=True, **kwds)
     c = Client(app, Response)
     return app, c
   
   def test_hello_world(self):
-    from raginei.app import route
+    from raginei import route
     app, c = self.init_app()
     msg = 'Hello World!'
     @route('/')
     def hello_world():
       return msg
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == msg, res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, msg)
   
   def test_config(self):
-    from raginei.app import Application
+    from raginei import Application
     msg = 'this_is_config'
     app = Application(this_is_config=msg)
     val = app.config['this_is_config']
-    assert val == msg, val
+    self.assertEqual(val, msg)
   
   def test_config_underscore_ignored(self):
-    from raginei.app import Application
+    from raginei import Application
     msg = '_starts_with_unserscore'
     app = Application(_starts_with_unserscore=msg)
     val = app.config.get('_starts_with_unserscore')
-    assert not val, val
-
+    self.assertFalse(val)
+  
   def test_make_response(self):
     app, c = self.init_app(url_strict_slashes=True)
     res = app.make_response('aaa')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'aaa', res.data
-    assert res.content_type.startswith('text/html'), res.content_type
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'aaa')
+    self.assertTrue(res.content_type.startswith('text/html'))
     res = app.make_response('bbb', content_type='text/plain')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'bbb', res.data
-    assert res.content_type == 'text/plain', res.content_type
-
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'bbb')
+    self.assertEqual(res.content_type, 'text/plain')
+  
   def test_request_middleware(self):
-    from raginei.app import request_middleware
+    from raginei import request_middleware
     app, c = self.init_app()
     @request_middleware
     def middleware(req):
-      assert req
+      self.assertTrue(req)
       return 'request_middleware'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'request_middleware', res.data
-
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'request_middleware')
+  
   def test_response_middleware(self):
-    from raginei.app import route, response_middleware
+    from raginei import route, response_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       return 'foo'
     @response_middleware
     def middleware(res):
-      assert res
-      assert res.status_code == 200, res.status_code
-      assert res.data == 'foo', res.data
+      self.assertTrue(res)
+      self.assertEqual(res.status_code, 200)
+      self.assertEqual(res.data, 'foo')
       return 'response_middleware'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'response_middleware', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'response_middleware')
   
   def test_routing_middleware(self):
-    from raginei.app import route, routing_middleware
+    from raginei import route, routing_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
@@ -94,47 +93,47 @@ class MyTest(GaeTestCase):
       return 'bar'
     @routing_middleware
     def middleware(request, endpoint):
-      assert endpoint == 'foo', endpoint
+      self.assertEqual(endpoint, 'foo')
       return 'bar'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'bar', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'bar')
   
   def test_view_middleware(self):
-    from raginei.app import route, view_middleware
+    from raginei import route, view_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       return 'foo'
     @view_middleware
     def middleware(request, view_func, view_args):
-      assert request
-      assert view_func
-      assert view_func.__name__ == 'foo'
-      assert not view_args
+      self.assertTrue(request)
+      self.assertTrue(view_func)
+      self.assertEqual(view_func.__name__, 'foo')
+      self.assertFalse(view_args)
       return 'view_middleware'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'view_middleware', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'view_middleware')
   
   def test_exception_middleware(self):
-    from raginei.app import route, exception_middleware
+    from raginei import route, exception_middleware
     app, c = self.init_app()
     @route('/')
     def foo():
       raise ValueError('foo')
     @exception_middleware
     def middleware(request, e):
-      assert request
-      assert e
-      assert e.args[0] == 'foo'
+      self.assertTrue(request)
+      self.assertTrue(e)
+      self.assertEqual(e.args[0], 'foo')
       return 'exception_middleware'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'exception_middleware', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'exception_middleware')
   
   def test_multi_route(self):
-    from raginei.app import route
+    from raginei import route
     app, c = self.init_app()
     @route('/foo')
     def foo():
@@ -143,67 +142,68 @@ class MyTest(GaeTestCase):
     def bar():
       return 'bar'
     res = c.get('/foo')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'foo', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'foo', res.data)
     res = c.get('/bar')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'bar', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'bar')
   
   def test_not_found(self):
     app, c = self.init_app()
     res = c.get('/unknown')
-    assert res.status_code == 404, res.status_code
+    self.assertEqual(res.status_code, 404)
   
   def test_redirect(self):
-    from raginei.app import route, redirect
+    from raginei import route, redirect
     app, c = self.init_app()
     @route('/')
     def bar():
       redirect('/foo')
     res = c.get('/')
-    assert res.status_code == 302, res.status_code
-    assert res.headers['Location'].endswith('/foo'), res.headers
+    self.assertEqual(res.status_code, 302)
+    self.assertTrue(res.headers['Location'].endswith('/foo'))
   
   def test_abort(self):
-    from raginei.app import route, abort
+    from raginei import route, abort
     app, c = self.init_app()
     @route('/')
     def bar():
       abort()
     res = c.get('/')
-    assert res.status_code == 404, res.status_code
+    self.assertEqual(res.status_code, 404)
   
   def test_abort_with_code(self):
-    from raginei.app import route, abort
+    from raginei import route, abort
     app, c = self.init_app()
+    app.logging_exception = False
     @route('/')
     def bar():
       abort(503)
     res = c.get('/')
-    assert res.status_code == 503, res.status_code
+    self.assertEqual(res.status_code, 503)
   
   def test_abort_if_true(self):
-    from raginei.app import route, abort_if
+    from raginei import route, abort_if
     app, c = self.init_app()
     @route('/')
     def bar():
       abort_if(True)
     res = c.get('/')
-    assert res.status_code == 404, res.status_code
+    self.assertEqual(res.status_code, 404)
   
   def test_abort_if_false(self):
-    from raginei.app import route, abort_if
+    from raginei import route, abort_if
     app, c = self.init_app()
     @route('/')
     def bar():
       abort_if(False)
       return 'finished'
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == 'finished', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, 'finished')
   
   def test_abort_url_for(self):
-    from raginei.app import route, url
+    from raginei import route, url
     app, c = self.init_app()
     @route('/')
     def bar():
@@ -212,28 +212,89 @@ class MyTest(GaeTestCase):
     def piyo():
       return url('piyo')
     res = c.get('/')
-    assert res.status_code == 200, res.status_code
-    assert res.data == '/', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, '/', res.data)
     res = c.get('/piyo')
-    assert res.status_code == 200, res.status_code
-    assert res.data == '/piyo', res.data
+    self.assertEqual(res.status_code, 200)
+    self.assertEqual(res.data, '/piyo')
   
   def test_project_root(self):
     import os
     app, c = self.init_app()
-    assert app.project_root == os.path.dirname(
-      os.path.dirname(os.path.abspath(__file__))), app.project_root
+    self.assertEqual(app.project_root, os.path.dirname(
+      os.path.dirname(os.path.abspath(__file__))), app.project_root)
   
   def test_static_dir(self):
     app, c = self.init_app()
-    assert app.static_dir == '/static/', app.static_dir
+    self.assertEqual(app.static_dir, '/static/')
     app, c = self.init_app(static_dir='hoge')
-    assert app.static_dir == '/hoge/', app.static_dir
+    self.assertEqual(app.static_dir, '/hoge/')
     app, c = self.init_app(static_dir='/fuga')
-    assert app.static_dir == '/fuga/', app.static_dir
+    self.assertEqual(app.static_dir, '/fuga/')
     app, c = self.init_app(static_dir='/piyo')
-    assert app.static_dir == '/piyo/', app.static_dir
+    self.assertEqual(app.static_dir, '/piyo/')
+  
+  def test_local(self):
+    from raginei import local
+    app, c = self.init_app()
+    self.assertTrue(local)
+  
+  def test_request(self):
+    from raginei import route, request
+    app, c = self.init_app()
+    self.assertFalse(request)
+    @route('/')
+    def foo():
+      self.assertTrue(request)
+      return ''
+    res = c.get('/')
+    self.assertEqual(res.status_code, 200)
+  
+  def test_session(self):
+    from raginei import route, session
+    app, c = self.init_app()
+    self.assertFalse(session)
+    @route('/')
+    def foo():
+      self.assertFalse(session)
+      self.assertIsNotNone(session)
+      self.assertFalse(session.get('hoge'))
+      session['hoge'] = 'fuga'
+      self.assertTrue(session)
+      self.assertEqual(session['hoge'], 'fuga')
+      return ''
+    res = c.get('/')
+    self.assertEqual(res.status_code, 200)
+    self.assertFalse(res.headers.get('Set-Cookie'))
+  
+  def test_session_cookie(self):
+    from raginei import route, session
+    app, c = self.init_app(session_secret='session_secret')
+    @route('/')
+    def foo():
+      self.assertTrue(session)
+      self.assertTrue(session['_csrf'])
+      self.assertFalse(session.get('hoge'))
+      session['hoge'] = 'fuga'
+      self.assertTrue(session)
+      self.assertEqual(session['hoge'], 'fuga')
+      return ''
+    res = c.get('/')
+    self.assertEqual(res.status_code, 200)
+    cookie = res.headers.get('Set-Cookie', '')
+    self.assertTrue(cookie)
+    self.assertTrue(cookie.startswith('session="'))
+  
+  def test_session_cookie_keep(self):
+    from raginei import route, session
+    app, c = self.init_app(session_secret='session_secret')
+    @route('/')
+    def foo():
+      return ''
+    res = c.get('/')
+    res2 = c.get('/')
+    self.assertEqual(res.headers.get('Set-Cookie', ''), res2.headers.get('Set-Cookie', ''))
 
 
 if __name__ == '__main__':
-    unittest.main()
+  unittest.main()
