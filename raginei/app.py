@@ -26,6 +26,20 @@ from .wrappers import Request, Response, Found, MovedPermanently
 from .util import funcname, json_module, is_debug, measure_time
 from .ctx import Context
 
+__all__ = [
+  # classes and functions
+  'toplevel', 'tasklet', 'synctasklet', 'Application', 'to_unicode',
+  'route', 'template_filter', 'template_func', 'context_processor',
+  'request_middleware', 'response_middleware', 'routing_middleware',
+  'view_middleware', 'exception_middleware', 'fetch', 'render', 'redirect',
+  'render_json', 'render_text', 'render_blank_image', 'fetch_json', 'abort',
+  'abort_if', 'url',
+  # variables
+  'local', 'current_app', 'request', 'session', 'url_adapter', 'config',
+  # external identifiers
+  'import_string', 'cached_property',
+]
+
 local = Local()
 local_manager = LocalManager([local])
 
@@ -95,7 +109,7 @@ class Application(object):
     self.error_handlers = {}
     self.jinja2_extensions = self.config.get('jinja2_extensions') or []
     self.jinja2_environment_kwargs = self.config.get('jinja2_environment_kwargs') or {}
-    self.logging_internal = self.config.get('logging_internal') or False
+    self.logging_exception = self.config.get('logging_exception') or True
     self.is_first_request = True
   
   def load_config(self, config, **kwds):
@@ -255,7 +269,8 @@ class Application(object):
   def handle_exception(self, e):
     code = getattr(e, 'code', 500)
     if 500 <= code <= 599:
-      logging.exception(e)
+      if self.logging_exception:
+        logging.exception(e)
     handler = self.error_handlers.get(code)
     if handler:
       return handler(e)
@@ -510,8 +525,10 @@ def fetch(template, **values):
 
 
 def render(template, **values):
-  content_type = values.pop('_content_type', None) or 'text/html'
-  return current_app.make_response(fetch(template, **values), content_type=content_type)
+  mimetype = values.pop('_mimetype', None) or 'text/html'
+  content_type = values.pop('_content_type', None)
+  return current_app.make_response(fetch(template, **values),
+    content_type=content_type, mimetype=mimetype)
 
 
 def make_redirect(endpoint, **values):

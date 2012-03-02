@@ -4,6 +4,7 @@ import datetime
 from werkzeug.contrib.securecookie import SecureCookie
 from raginei.app import current_app, request, local, template_func, \
   request_middleware, response_middleware
+from raginei.ext.csrf import csrf_token
 
 
 @request_middleware
@@ -13,6 +14,7 @@ def load_session_from_cookie(request):
     local.session = SecureCookie.load_cookie(request,
       current_app.config.get('session_cookie_name') or 'session', secret_key=secret)
     request._flash = local.session.pop('_flash', '')
+    csrf_token() # all session should have csrf token
   else:
     local.session = {}
 

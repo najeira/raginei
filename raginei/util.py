@@ -12,6 +12,8 @@ import sys
 import logging
 import time
 
+__all__ = ['to_str', 'funcname', 'wraps', 'json_module', 'is_debug',
+  'measure_time', 'setup_gae_path']
 
 def to_str(v):
   if isinstance(v, basestring):
@@ -76,7 +78,7 @@ def measure_time(f):
     try:
       return f(*args, **kwds)
     finally:
-      if current_app.config.get('logging_internal'):
+      if current_app.config.get('logging_elapsed_time'):
         logging.info('%s: %.6f' % (callee_name, time.clock() - start))
   return wrapper
 
