@@ -15,7 +15,7 @@ import time
 __all__ = ['to_str', 'funcname', 'wraps', 'json_module', 'is_debug',
   'measure_time', 'setup_gae_path']
 
-def to_str(v):
+def to_str(v=None):
   if isinstance(v, basestring):
     return v
   elif isinstance(v, (list, tuple, set, frozenset)):
