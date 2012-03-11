@@ -220,7 +220,7 @@ class Application(object):
   def dispatch_request(self):
     try:
       if request.routing_exception:
-        raise request.routing_exception
+        return request.routing_exception
       view_func = self.get_view_func(request.url_rule.endpoint)
       response = self.process_view(view_func)
       if response:
