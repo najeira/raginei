@@ -311,7 +311,7 @@ def check_or_radio_tag_one(env, typ, name, choices, value=None):
   
   input = input_tag(env, typ, name, elem, **params)
   label_text = jinja2.Markup(jinja2.Markup(input) + jinja2.escape(choice))
-  label = label_tag(env, tag_id, label_text, **{'class': 'radio'})
+  label = label_tag(env, tag_id, label_text, **{'class': typ})
   return to_markup(env, label)
 
 

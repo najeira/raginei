@@ -11,6 +11,7 @@ from __future__ import with_statement
 
 import sys
 import os
+import time
 import logging
 import threading
 
@@ -62,38 +63,29 @@ except ImportError:
 def toplevel(func):
   if not toplevel_ndb:
     return func
-  if getattr(func, '__is_toplevel__', None):
-    return func
-  flet = wrap_tasklet(toplevel_ndb, func)
-  flet.__is_toplevel__ = True
-  return flet
+  return wrap_tasklet(toplevel_ndb, func, 'toplevel')
 
 
 def tasklet(func):
   if not tasklet_ndb:
     return func
-  if getattr(func, '__is_tasklet__', None):
-    return func
-  if getattr(func, '__is_toplevel__', None):
-    return func
-  return wrap_tasklet(tasklet_ndb, func)
+  return wrap_tasklet(tasklet_ndb, func, 'tasklet')
 
 
 def synctasklet(func):
   if not synctasklet_ndb:
     return func
-  if getattr(func, '__is_tasklet__', None):
-    return func
-  if getattr(func, '__is_toplevel__', None):
-    return func
-  return wrap_tasklet(synctasklet_ndb, func)
+  return wrap_tasklet(synctasklet_ndb, func, 'synctasklet')
 
 
-def wrap_tasklet(wrapper, func):
+def wrap_tasklet(wrapper, func, name):
+  name = '__is_%s__' % name
+  if getattr(func, name, None):
+    return func
   flet = wrapper(func)
   flet.__module__ = func.__module__
-  flet.__is_tasklet__ = True
   flet.__wrapped__ = func
+  setattr(flet, name, True)
   return flet
 
 
@@ -118,12 +110,16 @@ class Application(object):
     else:
       if isinstance(config, basestring):
         config = import_string(config)
-      config = dict([(key, getattr(config, key)) for key in dir(config) if not key.startswith('_')])
+      config = dict([(key, getattr(config, key))
+        for key in dir(config) if not key.startswith('_')])
     if kwds:
-      config.update(dict([(key, val) for key, val in kwds.iteritems() if not key.startswith('_')]))
+      config.update(dict([(key, val)
+        for key, val in kwds.iteritems() if not key.startswith('_')]))
     return config
   
   def init_routes(self):
+    self.add_url_rule('/static/<path:filename>', endpoint='static',
+      view_func=self.send_static_file)
     for endpoint, value in Context.get_routes().iteritems():
       self.add_url_rule(value[0], endpoint=endpoint, **value[1])
   
@@ -139,11 +135,11 @@ class Application(object):
     self.view_functions[endpoint] = view_func
   
   def make_response(self, *args, **kwds):
-    if 1 == len(args) and not isinstance(args[0], basestring):
-      if isinstance(args[0], exceptions.HTTPException):
-        return args[0].get_response(request.environ)
-      return args[0]
-    return self.response_class(*args, **kwds)
+    if 1 != len(args) or isinstance(args[0], basestring):
+      return self.response_class(*args, **kwds)
+    if isinstance(args[0], exceptions.HTTPException):
+      return args[0].get_response(request.environ)
+    return args[0]
   
   @measure_time
   def process_request(self):
@@ -194,8 +190,6 @@ class Application(object):
       return view_func
     with _lock:
       view_func = self.view_functions[endpoint]
-      if not isinstance(view_func, (tuple, basestring)):
-        return view_func
       if isinstance(view_func, tuple):
         if 3 == len(view_func):
           view_classname, args, kwargs = view_func
@@ -252,9 +246,6 @@ class Application(object):
         result = result.get_response(request.environ)
       elif not isinstance(result, basestring):
         result = result.get_result() #Future
-    return self.view_func_result_to_response(result)
-  
-  def view_func_result_to_response(self, result):
     if isinstance(result, self.response_class):
       return result
     return self.make_response(result)
@@ -262,8 +253,6 @@ class Application(object):
   def _setup_template(self, view_func, template):
     if not template:
       template = view_func.__name__
-    if '.' not in template:
-      template = template + '.html'
     return template
   
   def handle_exception(self, e):
@@ -379,8 +368,11 @@ class Application(object):
       yield ext
   
   def init_jinja2_environ(self):
-    loader_name = self.config.get('jinja2_loader') or \
-      'raginei.jinja2loader.FileSystemLoader'
+    if self.debug or self.test:
+      default_loader = 'jinja2.FileSystemLoader'
+    else:
+      default_loader = 'raginei.jinja2loader.FileSystemLoader'
+    loader_name = self.config.get('jinja2_loader') or default_loader
     loader_cls = import_string(loader_name)
     template_dir = self.config.get('template_dir') or 'templates'
     env_dict = {
@@ -422,6 +414,33 @@ class Application(object):
     env = self.jinja2_env
     for name, f in Context.get_template_filters().iteritems():
       env.filters[name] = f
+  
+  def send_static_file(self, filename):
+    import mimetypes
+    from werkzeug.wsgi import wrap_file
+    from zlib import adler32
+    abort_if('..' in filename)
+    filename = os.path.normpath(filename)
+    filename = os.path.join(self.project_root, 'static', filename)
+    abort_if(not os.path.isfile(filename))
+    file = open(filename, 'rb')
+    data = wrap_file(request.environ, file)
+    mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+    rv = self.make_response(data, mimetype=mimetype, direct_passthrough=True)
+    if not self.debug:
+      mtime = request.environ.get('CURRENT_VERSION_ID')
+      if not mtime:
+        mtime = os.path.getmtime(filename)
+        if mtime:
+          rv.date = int(mtime)
+      rv.cache_control.public = True
+      cache_timeout = self.config.get('static_cache_timeout', 3600) or 0
+      rv.cache_control.max_age = cache_timeout
+      rv.expires = int(time.time() + cache_timeout)
+      rv.set_etag('%s-%s-%s' % (
+        mtime, os.path.getsize(filename), adler32(filename) & 0xffffffff))
+      rv = rv.make_conditional(request)
+    return rv
 
 
 def to_unicode(s, encoding='utf-8', errors='strict'):
