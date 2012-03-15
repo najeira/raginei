@@ -18,9 +18,12 @@ from os import path, listdir, makedirs
 import threading
 import Queue
 import logging
+import imp, marshal
+
+py_header = imp.get_magic() + u'\xff\xff\xff\xff'.encode('iso-8859-15')
 
 
-def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
+def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir='', bytecode=False):
   """Compiles a Jinja2 template to python code.
   Params:
     `env`: a Jinja2 Environment instance.
@@ -47,7 +50,11 @@ def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
   
   # Compile the template to raw Python code..
   name = src_path.replace(base_dir, '')
-  raw = env.compile(source, name=name, filename=name, raw=True)
+  if bytecode:
+    code = env.compile(source, name=name, filename=name, raw=False)
+    raw = py_header + marshal.dumps(code)
+  else:
+    raw = env.compile(source, name=name, filename=name, raw=True)
   
   # Save to the destination.
   dst_file = open(dst_path, 'wb')
@@ -57,7 +64,7 @@ def compile_file(env, src_path, dst_path, encoding='utf-8', base_dir=''):
 
 
 def compile_dir(env, src_path, dst_path, pattern=r'^[^\.].*\..*[^~]$',
-                encoding='utf-8', base_dir=None,
+                encoding='utf-8', base_dir=None, bytecode=False,
                 negative_pattern=r'^.*(\.swp|\.png|\.jpg|\.gif|\.pdf)$'):
   """Compiles a directory of Jinja2 templates to python code.
   Params:
@@ -82,14 +89,13 @@ def compile_dir(env, src_path, dst_path, pattern=r'^[^\.].*\..*[^~]$',
     if path.isdir(src_name):
       if not path.isdir(dst_name):
         makedirs(dst_name)
-      for dir_params in compile_dir(env, src_name, dst_name, encoding=encoding, base_dir=base_dir):
+      for dir_params in compile_dir(env, src_name, dst_name, encoding=encoding,
+        base_dir=base_dir, bytecode=bytecode):
         yield dir_params
     elif path.isfile(src_name) and re.match(pattern, filename) and \
       not re.match(negative_pattern, filename):
-      #compile_file(env, src_name, dst_name, encoding=encoding,
-      #             base_dir=base_dir)
       yield (compile_file, (env, src_name, dst_name),
-        dict(encoding=encoding, base_dir=base_dir))
+        dict(encoding=encoding, base_dir=base_dir, bytecode=bytecode))
 
 
 class ThreadPool(object):
@@ -119,10 +125,11 @@ class ThreadPool(object):
       thread.join()
 
 
-def compile(jinja2_env, templates_dir, dest_dir, threads=1):
+def compile_templates(jinja2_env, templates_dir, dest_dir, threads=1, bytecode=False):
   thread_pool = ThreadPool(threads)
   try:
-    for func, args, kwds in compile_dir(jinja2_env, templates_dir, dest_dir):
+    for func, args, kwds in compile_dir(
+      jinja2_env, templates_dir, dest_dir, bytecode=bytecode):
       thread_pool.submit(func, *args, **kwds)
   finally:
     thread_pool.shutdown()
@@ -138,6 +145,7 @@ def main():
   parser.add_option('--dest', type='string')
   parser.add_option('--root', type='string', default='.')
   parser.add_option('--threads', type='int', default=1)
+  parser.add_option('--bytecode', action='store_true', default=False)
   
   options, args = parser.parse_args()
   options = dict([(k, v) for k, v in options.__dict__.iteritems()
@@ -180,7 +188,8 @@ def main():
   if not path.isdir(dest_dir):
     makedirs(dest_dir)
   
-  compile(application.jinja2_env, src_dir, dest_dir, options['threads'])
+  compile_templates(application.jinja2_env, src_dir, dest_dir,
+    options['threads'], options['bytecode'])
 
 
 if __name__ == '__main__':
