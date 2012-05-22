@@ -39,7 +39,7 @@ class Request(RequestBase):
   
   @cached_property
   def task_retry_count(self):
-    return self.headers.get('X-AppEngine-TaskRetryCount')
+    return self.headers.get('X-AppEngine-TaskRetryCount') or 0
   
   @cached_property
   def queue_name(self):
