@@ -37,14 +37,23 @@ class LoaderMixin(object):
     return environment.compile(source, name, filename)
 
 
+class CodeLoaderMixin(object):
+  
+  def compile(self, environment, source, name, filename):
+    return compile(source, filename, 'exec')
+
+
 class FileSystemLoader(LoaderMixin, FileSystemLoaderBase):
   pass
 
 
-class FileSystemCodeLoader(FileSystemLoader):
-  
+class FileSystemCodeLoader(CodeLoaderMixin, FileSystemLoader):
+  pass
+
+
+class FileSystemCompiledCodeLoader(FileSystemLoader):
   def compile(self, environment, source, name, filename):
-    return compile(source, filename, 'exec')
+    return source
 
 
 class DatastoreLoader(LoaderMixin, BaseLoader):
@@ -53,7 +62,6 @@ class DatastoreLoader(LoaderMixin, BaseLoader):
     super(DatastoreLoader, self).__init__(self)
     self.model_class = model_class
     self.encoding = encoding
-    self._code_cache = {}
   
   def get_source(self, environment, template):
     obj = self.model_class.get_by_key_name(template)
@@ -62,10 +70,8 @@ class DatastoreLoader(LoaderMixin, BaseLoader):
     return obj.source, template, obj.uptodate
 
 
-class DatastoreCodeLoader(DatastoreLoader):
-  
-  def compile(self, environment, source, name, filename):
-    return compile(source, filename, 'exec')
+class DatastoreCodeLoader(CodeLoaderMixin, DatastoreLoader):
+  pass
 
 
 class TemplateStrip(object):
