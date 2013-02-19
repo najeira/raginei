@@ -10,10 +10,10 @@ raginei.helpers
 import datetime
 import re
 
-import jinja2
 from werkzeug.urls import url_quote_plus
 
 from raginei.app import request, url, current_app, template_filter, template_func
+from raginei.util import jinja2
 
 
 def to_unicode(s, encoding='utf-8', errors='replace'):
@@ -30,7 +30,7 @@ def to_str(s, encoding='utf-8', errors='replace'):
   if s is None:
     return ''
   elif not isinstance(s, basestring):
-    return unicode(s)
+    return str(s)
   elif isinstance(s, unicode):
     return s.encode(encoding, errors)
   return s

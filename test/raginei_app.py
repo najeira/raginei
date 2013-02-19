@@ -45,7 +45,7 @@ class MyTest(GaeTestCase):
     self.assertFalse(val)
   
   def test_make_response(self):
-    app, c = self.init_app(url_strict_slashes=True)
+    app, c = self.init_app()
     res = app.make_response('aaa')
     self.assertEqual(res.status_code, 200)
     self.assertEqual(res.data, 'aaa')
@@ -256,6 +256,7 @@ class MyTest(GaeTestCase):
     self.assertFalse(session)
     @route('/')
     def foo():
+      session.pop('_flash', None)
       self.assertFalse(session)
       self.assertIsNotNone(session)
       self.assertFalse(session.get('hoge'))
@@ -294,6 +295,16 @@ class MyTest(GaeTestCase):
     res = c.get('/')
     res2 = c.get('/')
     self.assertEqual(res.headers.get('Set-Cookie', ''), res2.headers.get('Set-Cookie', ''))
+  
+  def test_url_strict_slashes(self):
+    from raginei import route, url
+    app, c = self.init_app(url_strict_slashes=True)
+    @route('/foo/')
+    def foo():
+      return 'foo'
+    res = c.get('/foo')
+    self.assertEqual(res.status_code, 301)
+    self.assertTrue(res.headers.get('Location', '').endswith('/foo/'))
 
 
 if __name__ == '__main__':

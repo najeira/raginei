@@ -22,7 +22,7 @@ class Request(RequestBase):
   
   @property
   def endpoint(self):
-    if self.url_rule is not None:
+    if self.url_rule:
       return self.url_rule.endpoint
   
   @cached_property
@@ -39,7 +39,7 @@ class Request(RequestBase):
   
   @cached_property
   def task_retry_count(self):
-    return self.headers.get('X-AppEngine-TaskRetryCount') or 0
+    return int(self.headers.get('X-AppEngine-TaskRetryCount') or 0)
   
   @cached_property
   def queue_name(self):
@@ -56,6 +56,7 @@ class Request(RequestBase):
   @cached_property
   def json(self):
     if self.mimetype == 'application/json':
+      #TODO: request_charset = self.mimetype_params.get('charset')
       return json_module().loads(self.data)
   
   @cached_property

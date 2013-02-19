@@ -9,5 +9,4 @@ if lib_path not in sys.path:
 
 from raginei.testutil import get_base
 
-#GaeTestCase = get_base(r'C:\software\dev\google_appengine')
-GaeTestCase = get_base()
+GaeTestCase = get_base(r'C:\Program Files (x86)\Google\google_appengine')

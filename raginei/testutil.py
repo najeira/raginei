@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 raginei.testutil
 ================
@@ -65,20 +65,17 @@ def get_base(gae_home=None):
     
     def _env_setUp(self):
       if testbed:
+        from google.appengine.datastore import datastore_stub_util
         self.testbed = testbed.Testbed()
         self.testbed.activate()
-        self.testbed.init_datastore_v3_stub()
+        consistency_policy = datastore_stub_util.PseudoRandomHRConsistencyPolicy()
+        #consistency_policy = datastore_stub_util.TimeBasedHRConsistencyPolicy()
+        self.testbed.init_datastore_v3_stub(consistency_policy=consistency_policy)
         self.testbed.init_memcache_stub()
         self.testbed.init_images_stub()
         self.testbed.init_mail_stub()
         self.testbed.init_taskqueue_stub()
         self.testbed.init_urlfetch_stub()
-        
-        #set mode to high replication
-        from google.appengine.datastore import datastore_stub_util
-        datastore_stub = self.testbed.get_stub(testbed.DATASTORE_SERVICE_NAME)
-        datastore_stub.SetConsistencyPolicy(
-          datastore_stub_util.TimeBasedHRConsistencyPolicy())
       
       from .ctx import Context
       Context.push()

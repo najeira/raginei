@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
+raginei.ext.csrf
+================
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
+"""
 
 import uuid
 import base64
-
-import jinja2
-
 from raginei.app import session, abort, template_func, view_middleware
 from raginei.helpers import to_markup, input_tag, form_tag as form_tag_base
+from raginei.util import jinja2
 
 
 _exempts = []
@@ -39,7 +44,7 @@ def form_tag(env, *args, **kwds):
 
 @view_middleware
 def protect_from_csrf(request, view_func, view_args):
-  if request.is_get or request.is_taskqueue:
+  if not request.is_post or request.is_taskqueue:
     return
   csrf_token = session.get('_csrf')
   if csrf_token:

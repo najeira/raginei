@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+raginei.ext.session
+===================
+
+:copyright: 2011 by najeira <najeira@gmail.com>.
+:license: Apache License 2.0, see LICENSE for more details.
+"""
 
 import datetime
 from werkzeug.contrib.securecookie import SecureCookie
@@ -11,12 +18,13 @@ from raginei.ext.csrf import csrf_token
 def load_session_from_cookie(request):
   secret = current_app.config.get('session_secret')
   if secret:
-    local.session = SecureCookie.load_cookie(request,
-      current_app.config.get('session_cookie_name') or 'session', secret_key=secret)
-    request._flash = local.session.pop('_flash', '')
+    session_name = current_app.config.get('session_cookie_name') or 'session'
+    local.session = SecureCookie.load_cookie(request, session_name, secret_key=secret)
+    request._flash = local.session.pop('_flash', {})
     csrf_token() # all session should have csrf token
   else:
     local.session = {}
+  local.session['_flash'] = {}
 
 
 @response_middleware
@@ -31,17 +39,17 @@ def save_session_to_cookie(response):
       lifetime = current_app.config.get('session_lifetime')
       if lifetime:
         expires = datetime.datetime.utcnow() + datetime.timedelta(seconds=lifetime)
-      session.save_cookie(response,
-        current_app.config.get('session_cookie_name') or 'session', expires=expires)
+      session_name = current_app.config.get('session_cookie_name') or 'session'
+      session.save_cookie(response, session_name, expires=expires)
 
 
-def flash(message):
-  local.session['_flash'] = message
+def flash(message, category=''):
+  local.session['_flash'][category] = message
 
 
 @template_func
-def get_flashed_message():
+def get_flashed_message(category=''):
   try:
-    return request._flash
-  except AttributeError:
+    return request._flash[category]
+  except (AttributeError, KeyError):
     return ''
